@@ -1,0 +1,40 @@
+{
+  "name": "backend-node-realtime",
+  "version": "1.0.0",
+  "description": "Voice Agent Orchestrator - Node.js Realtime Layer",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "echo \"No linter configured\"",
+    "health": "curl http://localhost:3000/health",
+    "test-ws": "node test-websocket.js"
+  },
+  "keywords": [
+    "voice-agent",
+    "orchestrator",
+    "websocket",
+    "realtime",
+    "twilio",
+    "supabase"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@fastify/cors": "^8.2.1",
+    "@fastify/websocket": "^7.2.0",
+    "@supabase/supabase-js": "^2.38.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.5.0",
+    "fastify": "^4.24.3",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
