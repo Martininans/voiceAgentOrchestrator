@@ -1,9 +1,15 @@
 import openai
 import base64
 import io
-import os
+import structlog
+import asyncio
 from typing import Dict, Any
-import logging
+from app.config import Config
+from app.optimization_implementations import (
+    circuit_breaker,
+    retry_on_exception,
+    track_metrics
+)
 
 class InputAgent:
     """
@@ -11,9 +17,12 @@ class InputAgent:
     """
     
     def __init__(self):
-        self.client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.logger = logging.getLogger(__name__)
+        self.client = openai.OpenAI(api_key=Config.openai()["api_key"])
+        self.logger = structlog.get_logger(__name__)
         
+    @track_metrics("transcribe_audio")
+    @retry_on_exception(max_attempts=3, delay=2)
+    @circuit_breaker
     async def transcribe_audio(self, audio_data: str) -> str:
         """
         Transcribe audio data to text using OpenAI Whisper
@@ -39,20 +48,25 @@ class InputAgent:
             audio_file = io.BytesIO(audio_bytes)
             audio_file.name = "audio.wav"  # Give it a filename
             
-            # Transcribe using OpenAI Whisper
-            transcript = self.client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                response_format="text"
-            )
+            def sync_call():
+                return self.client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    response_format="text"
+                )
+
+            transcript = await asyncio.to_thread(sync_call)
             
-            self.logger.info(f"Transcription completed: {transcript[:100]}...")
+            self.logger.info("Transcription complete", preview=transcript[:100])
             return transcript
             
         except Exception as e:
-            self.logger.error(f"Error transcribing audio: {str(e)}")
+            self.logger.error("Error in transcribe_audio", error=str(e))
             raise Exception(f"Audio transcription failed: {str(e)}")
     
+    @track_metrics("transcribe_file")
+    @retry_on_exception(max_attempts=3, delay=2)
+    @circuit_breaker
     async def transcribe_file(self, file_path: str) -> str:
         """
         Transcribe audio file to text
@@ -64,20 +78,23 @@ class InputAgent:
             Transcribed text
         """
         try:
-            self.logger.info(f"Transcribing audio file: {file_path}")
+            self.logger.info("Transcribing file", file_path=file_path)
             
-            with open(file_path, "rb") as audio_file:
-                transcript = self.client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    response_format="text"
-                )
+            def sync_call():
+                with open(file_path, "rb") as audio_file:
+                    return self.client.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=audio_file,
+                        response_format="text"
+                    )
+
+            transcript = await asyncio.to_thread(sync_call)
             
-            self.logger.info(f"File transcription completed: {transcript[:100]}...")
+            self.logger.info("File transcription complete", preview=transcript[:100])
             return transcript
             
         except Exception as e:
-            self.logger.error(f"Error transcribing file: {str(e)}")
+            self.logger.error("Error in transcribe_file", error=str(e))
             raise Exception(f"File transcription failed: {str(e)}")
     
     async def get_audio_metadata(self, audio_data: str) -> Dict[str, Any]:
@@ -91,14 +108,15 @@ class InputAgent:
             Audio metadata (duration, format, etc.)
         """
         try:
-            # This is a placeholder for audio metadata extraction
-            # In a real implementation, you might use libraries like pydub
+            self.logger.info("Extracting audio metadata")
+
+            # Placeholder metadata - future: pydub or ffmpeg-python
             return {
                 "format": "wav",
-                "duration": "estimated",
+                "duration": "unknown",
                 "channels": 1,
                 "sample_rate": 16000
             }
         except Exception as e:
-            self.logger.error(f"Error extracting audio metadata: {str(e)}")
+            self.logger.error("Error in get_audio_metadata", error=str(e))
             return {} 

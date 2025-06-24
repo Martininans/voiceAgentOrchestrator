@@ -1,0 +1,78 @@
+# Node.js Realtime Backend Environment Configuration
+# Copy this file to .env and update with your actual values
+# cp env-template.txt .env
+
+# =============================================================================
+# SERVER CONFIGURATION
+# =============================================================================
+PORT=3000
+HOST=0.0.0.0
+NODE_ENV=development
+
+# =============================================================================
+# VOICE PROVIDER CONFIGURATION
+# =============================================================================
+VOICE_PROVIDER=twilio
+TWILIO_ACCOUNT_SID=your-twilio-account-sid-here
+TWILIO_AUTH_TOKEN=your-twilio-auth-token-here
+TWILIO_PHONE_NUMBER=+1234567890
+TWILIO_WEBHOOK_URL=http://localhost:3000/voice/webhook
+
+# =============================================================================
+# SUPABASE CONFIGURATION
+# =============================================================================
+# Get these from your Supabase project dashboard
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key-here
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+
+# Supabase Database (if using direct connection)
+SUPABASE_DB_HOST=db.your-project.supabase.co
+SUPABASE_DB_PORT=5432
+SUPABASE_DB_NAME=postgres
+SUPABASE_DB_USER=postgres
+SUPABASE_DB_PASSWORD=your-db-password-here
+
+# =============================================================================
+# PYTHON ORCHESTRATOR CONFIGURATION
+# =============================================================================
+# URL of your Python FastAPI orchestrator
+ORCHESTRATOR_URL=http://localhost:8000
+ORCHESTRATOR_TIMEOUT=30000
+ORCHESTRATOR_RETRIES=3
+
+# =============================================================================
+# WEBSOCKET CONFIGURATION
+# =============================================================================
+MAX_WS_CONNECTIONS=100
+WS_HEARTBEAT_INTERVAL=30000
+
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+LOG_LEVEL=info
+LOG_FORMAT=json
+
+# =============================================================================
+# SECURITY CONFIGURATION
+# =============================================================================
+CORS_ORIGIN=*
+CORS_CREDENTIALS=false
+
+# =============================================================================
+# DEVELOPMENT NOTES
+# =============================================================================
+# This Node.js backend handles real-time communication and voice processing
+# It communicates with the Python orchestrator for AI processing
+#
+# To use real services:
+# 1. Update all the above variables with your actual credentials
+# 2. Ensure the Python orchestrator is running on ORCHESTRATOR_URL
+# 3. Set up your Twilio webhook to point to TWILIO_WEBHOOK_URL
+# 4. Configure Supabase for authentication and database access
+#
+# Security Notes:
+# - Never commit this file to version control
+# - Use environment-specific .env files (.env.production, .env.staging)
+# - Consider using a secrets management service for production
+# - Rotate API keys regularly 

@@ -1,27 +1,36 @@
 import openai
-import os
-from typing import Dict, Any, List
-import logging
 import json
+import structlog
+import asyncio
+from typing import Dict, Any, List
+from app.config import Config
+from app.optimization_implementations import (
+    CircuitBreaker,
+    retry_on_exception,
+    track_metrics,
+    cache_result
+)
 
 class OrchestratorAgent:
     """
-    Orchestrator Agent: Determines intent using GPT-4 and routes to appropriate agents
+    Orchestrator Agent: Determines intent using GPT-4 and routes to appropriate agents with optimizations
     """
-    
+
     def __init__(self):
-        self.client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.logger = logging.getLogger(__name__)
-        
-        # Define intents for hotel and hospital services
+        self.client = openai.OpenAI(api_key=Config.openai()["api_key"])
+        self.logger = structlog.get_logger(__name__)
+        self.openai_circuit_breaker = CircuitBreaker(
+            failure_threshold=5,
+            recovery_timeout=60
+        )
         self.intents = {
             "hotel": [
-                "room_booking", "check_in", "check_out", "room_service", 
+                "room_booking", "check_in", "check_out", "room_service",
                 "laundry_service", "wake_up_call", "wifi_info", "amenities_info",
                 "dining_hours", "concierge_service", "housekeeping"
             ],
             "hospital": [
-                "appointment_booking", "appointment_reminder", "directions", 
+                "appointment_booking", "appointment_reminder", "directions",
                 "department_info", "triage_assistant", "patient_history",
                 "emergency_info", "visiting_hours", "insurance_info"
             ],
@@ -29,8 +38,6 @@ class OrchestratorAgent:
                 "greeting", "goodbye", "help", "unknown", "fallback"
             ]
         }
-        
-        # System prompt for intent classification
         self.system_prompt = """
         You are an AI assistant that determines user intent for hotel and hospital services.
         
@@ -74,47 +81,46 @@ class OrchestratorAgent:
             "context": "additional_context"
         }
         """
-    
+
+    @property
+    def all_intents(self) -> List[str]:
+        """Flattened list of all intents"""
+        return [intent for category in self.intents.values() for intent in category]
+
+    @track_metrics("determine_intent")
+    @retry_on_exception(max_attempts=3, delay=2)
     async def determine_intent(self, text: str, context: Dict = None) -> Dict[str, Any]:
         """
         Determine user intent using GPT-4
-        
-        Args:
-            text: User input text
-            context: Additional context (user_id, session_id, etc.)
-            
-        Returns:
-            Intent classification result
         """
         try:
-            self.logger.info(f"Determining intent for: {text[:100]}...")
-            
-            # Build the user message
-            user_message = f"User input: {text}"
-            if context:
-                user_message += f"\nContext: {json.dumps(context)}"
-            
-            # Call GPT-4 for intent classification
-            response = self.client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": user_message}
-                ],
-                temperature=0.1,
-                max_tokens=200
-            )
-            
-            # Parse the response
+            self.logger.info("Determining intent", text_preview=text[:100])
+
+            def sync_call():
+                user_message = f"User input: {text}"
+                if context:
+                    user_message += f"\nContext: {json.dumps(context)}"
+                response = self.client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[
+                        {"role": "system", "content": self.system_prompt},
+                        {"role": "user", "content": user_message}
+                    ],
+                    temperature=0.1,
+                    max_tokens=200
+                )
+                return response
+
+            response = await self.openai_circuit_breaker.call(lambda: asyncio.to_thread(sync_call))
+            response = await response  # openai_circuit_breaker.call returns coroutine
             response_text = response.choices[0].message.content
             intent_result = json.loads(response_text)
-            
-            self.logger.info(f"Intent determined: {intent_result['intent']} (confidence: {intent_result['confidence']})")
-            
+
+            self.logger.info("Intent determined", intent=intent_result.get("intent"), confidence=intent_result.get("confidence"))
             return intent_result
-            
+
         except json.JSONDecodeError as e:
-            self.logger.error(f"Failed to parse intent response: {str(e)}")
+            self.logger.error("Failed to parse intent response", error=str(e))
             return {
                 "intent": "unknown",
                 "confidence": 0.0,
@@ -122,76 +128,62 @@ class OrchestratorAgent:
                 "context": "Failed to parse intent"
             }
         except Exception as e:
-            self.logger.error(f"Error determining intent: {str(e)}")
+            self.logger.error("Error determining intent", error=str(e))
             return {
                 "intent": "fallback",
                 "confidence": 0.0,
                 "entities": {},
                 "context": f"Error: {str(e)}"
             }
-    
+
+    @retry_on_exception(max_attempts=3, delay=2)
     async def get_intent_suggestions(self, text: str) -> List[str]:
         """
-        Get suggested intents for ambiguous input
-        
-        Args:
-            text: User input text
-            
-        Returns:
-            List of suggested intents
+        Suggest likely intents for ambiguous input
         """
         try:
             prompt = f"""
             Given the user input: "{text}"
-            
-            Suggest the top 3 most likely intents from the available list:
+
+            Suggest the top 3 most likely intents from the list:
             {json.dumps(self.intents, indent=2)}
-            
+
             Respond with a JSON array of intent names.
             """
-            
-            response = self.client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that suggests intents."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,
-                max_tokens=100
-            )
-            
+
+            def sync_call():
+                response = self.client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant that suggests intents."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=100
+                )
+                return response
+
+            response = await asyncio.to_thread(sync_call)
             suggestions = json.loads(response.choices[0].message.content)
+            self.logger.info("Intent suggestions", suggestions=suggestions)
             return suggestions
-            
+
         except Exception as e:
-            self.logger.error(f"Error getting intent suggestions: {str(e)}")
+            self.logger.error("Error getting intent suggestions", error=str(e))
             return ["unknown"]
-    
+
     async def validate_intent(self, intent: str) -> bool:
         """
         Validate if an intent is recognized
-        
-        Args:
-            intent: Intent to validate
-            
-        Returns:
-            True if valid, False otherwise
         """
-        all_intents = []
-        for category in self.intents.values():
-            all_intents.extend(category)
-        
-        return intent in all_intents
-    
+        is_valid = intent in self.all_intents
+        self.logger.info("Intent validation", intent=intent, is_valid=is_valid)
+        return is_valid
+
+    @cache_result(ttl=3600, key_prefix="intent_description")  # Cache 1 hour
     async def get_intent_description(self, intent: str) -> str:
         """
         Get description for a specific intent
-        
-        Args:
-            intent: Intent name
-            
-        Returns:
-            Intent description
         """
         intent_descriptions = {
             "room_booking": "Book hotel rooms and check availability",
@@ -220,5 +212,7 @@ class OrchestratorAgent:
             "unknown": "Unclear or unrecognized intent",
             "fallback": "Default response when unsure"
         }
-        
-        return intent_descriptions.get(intent, "Unknown intent") 
+
+        description = intent_descriptions.get(intent, "Unknown intent")
+        self.logger.info("Intent description lookup", intent=intent, description=description)
+        return description 
