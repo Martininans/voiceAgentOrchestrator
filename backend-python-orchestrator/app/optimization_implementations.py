@@ -40,18 +40,19 @@ class DatabaseManager:
         self.chroma_client = None
         self._initialized = False
     
-    async def initialize(self, redis_url: str = "redis://localhost:6379"):
-        """Initialize all database connections with proper pooling"""
-        try:
-            # Redis connection pool
-            self.redis_pool = aioredis.ConnectionPool.from_url(
-                redis_url,
-                max_connections=20,
-                retry_on_timeout=True,
-                socket_keepalive=True,
-                socket_keepalive_options={},
-                health_check_interval=30
-            )
+   async def initialize(self):
+    """Initialize all database connections with proper pooling"""
+    try:
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        
+        self.redis_pool = aioredis.ConnectionPool.from_url(
+            redis_url,
+            max_connections=20,
+            retry_on_timeout=True,
+            socket_keepalive=True,
+            socket_keepalive_options={},
+            health_check_interval=30
+        )
             
             # ChromaDB client with optimized settings
             import chromadb
@@ -158,7 +159,7 @@ class CacheManager:
         except Exception as e:
             logger.warning(f"Failed to invalidate cache: {e}")
 
-# Global cache manager instance
+# Global cache manager instance - will be updated with correct Redis URL during initialization
 cache_manager = CacheManager()
 
 def cache_result(ttl: int = 3600, key_prefix: str = ""):
@@ -231,7 +232,7 @@ class RateLimiter:
             logger.warning(f"Failed to get remaining requests: {e}")
             return limit
 
-# Global rate limiter instance
+# Global rate limiter instance - will be updated with correct Redis URL during initialization
 rate_limiter = RateLimiter()
 
 # ============================================================================
@@ -469,13 +470,22 @@ async def initialize_optimizations():
     try:
         logger.info("Initializing optimization components...")
         
-        # Initialize database connections
-        await db_manager.initialize()
+        # Get Redis URL from config
+        from app.config import Config
+        redis_url = Config.redis()["url"]
+        logger.info(f"Using Redis URL: {redis_url}")
         
-        # Initialize cache manager
+        # Initialize database connections
+        await db_manager.initialize(redis_url)
+        
+        # Create new cache manager instance with correct Redis URL
+        global cache_manager
+        cache_manager = CacheManager(redis_url)
         await cache_manager.initialize()
         
-        # Initialize rate limiter
+        # Create new rate limiter instance with correct Redis URL
+        global rate_limiter
+        rate_limiter = RateLimiter(redis_url)
         await rate_limiter.initialize()
         
         logger.info("All optimization components initialized successfully")

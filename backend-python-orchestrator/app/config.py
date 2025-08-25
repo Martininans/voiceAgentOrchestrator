@@ -6,13 +6,13 @@ Supports .env files and mock fallback for local/dev environments
 import os
 import logging
 from typing import Optional
-
 from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
-print("DEBUG: SUPABASE_URL =", os.getenv("SUPABASE_URL"))
-print("DEBUG: REDIS_URL =", os.getenv("REDIS_URL"))
-print("DEBUG: OPENAI_API_KEY =", os.getenv("OPENAI_API_KEY"))
+dotenv_path = Path(__file__).parent.parent / ".env"
+if dotenv_path.exists():
+    load_dotenv(dotenv_path)
+
 logger = logging.getLogger(__name__)
 
 class Config:
@@ -63,6 +63,57 @@ class Config:
             "auth_token": Config.get_env("TWILIO_AUTH_TOKEN", "mock-twilio-auth-token"),
             "phone_number": Config.get_env("TWILIO_PHONE_NUMBER", "+1234567890")
         }
+
+    @staticmethod
+    def vonage() -> dict:
+        return {
+            "api_key": Config.get_env("VONAGE_API_KEY", "mock-vonage-api-key"),
+            "api_secret": Config.get_env("VONAGE_API_SECRET", "mock-vonage-api-secret"),
+            "application_id": Config.get_env("VONAGE_APPLICATION_ID", "mock-vonage-app-id"),
+            "private_key": Config.get_env("VONAGE_PRIVATE_KEY", "mock-vonage-private-key"),
+            "phone_number": Config.get_env("VONAGE_PHONE_NUMBER", "+2341234567890")
+        }
+
+    @staticmethod
+    def aws_connect() -> dict:
+        return {
+            "access_key_id": Config.get_env("AWS_ACCESS_KEY_ID", "mock-aws-access-key"),
+            "secret_access_key": Config.get_env("AWS_SECRET_ACCESS_KEY", "mock-aws-secret-key"),
+            "region": Config.get_env("AWS_REGION", "us-east-1"),
+            "instance_id": Config.get_env("AWS_CONNECT_INSTANCE_ID", "mock-aws-instance-id"),
+            "phone_number": Config.get_env("AWS_CONNECT_PHONE_NUMBER", "+1234567890")
+        }
+
+    @staticmethod
+    def generic_http() -> dict:
+        return {
+            "webhook_url": Config.get_env("GENERIC_HTTP_WEBHOOK_URL", "https://mock-service.com/webhook"),
+            "api_key": Config.get_env("GENERIC_HTTP_API_KEY", "mock-generic-api-key"),
+            "headers": Config.get_env("GENERIC_HTTP_HEADERS", "{}"),
+            "timeout": Config.get_env("GENERIC_HTTP_TIMEOUT", "30000", cast_type=int)
+        }
+
+    @staticmethod
+    def voice_provider() -> str:
+        """Get the current voice provider from environment"""
+        return Config.get_env("VOICE_PROVIDER", "twilio").lower()
+
+    @staticmethod
+    def voice_config() -> dict:
+        """Get configuration for the current voice provider"""
+        provider = Config.voice_provider()
+        
+        if provider == "twilio":
+            return Config.twilio()
+        elif provider == "vonage":
+            return Config.vonage()
+        elif provider == "aws-connect":
+            return Config.aws_connect()
+        elif provider == "generic-http":
+            return Config.generic_http()
+        else:
+            logger.warning(f"Unknown voice provider: {provider}, falling back to twilio")
+            return Config.twilio()
 
     @staticmethod
     def database() -> dict:

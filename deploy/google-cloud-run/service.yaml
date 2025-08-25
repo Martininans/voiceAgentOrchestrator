@@ -1,0 +1,109 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: voice-agent-orchestrator
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/execution-environment: gen2
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/startup-cpu-boost: "true"
+    spec:
+      containerConcurrency: 1000
+      timeoutSeconds: 300
+      containers:
+      - image: gcr.io/YOUR_PROJECT_ID/voice-agent-orchestrator:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: SUPABASE_URL
+          value: "https://your-project.supabase.co"
+        - name: CHROMA_HOST
+          value: "chromadb"
+        - name: SECTOR
+          value: "generic"
+        envFrom:
+        - secretRef:
+            name: voice-agent-secrets
+        resources:
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: voice-agent-realtime
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/execution-environment: gen2
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/startup-cpu-boost: "true"
+    spec:
+      containerConcurrency: 1000
+      timeoutSeconds: 300
+      containers:
+      - image: gcr.io/YOUR_PROJECT_ID/voice-agent-realtime:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: VOICE_PROVIDER
+          value: "twilio"
+        - name: ORCHESTRATOR_URL
+          value: "https://voice-agent-orchestrator-xxxxx-uc.a.run.app"
+        - name: CORS_ORIGIN
+          value: "*"
+        envFrom:
+        - secretRef:
+            name: voice-agent-secrets
+        resources:
+          limits:
+            cpu: "2"
+            memory: "2Gi"
+          requests:
+            cpu: "1"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5 

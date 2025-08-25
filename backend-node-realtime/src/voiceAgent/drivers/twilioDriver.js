@@ -1,16 +1,39 @@
+const BaseDriver = require('./baseDriver');
 const config = require('../../config');
 const axios = require('axios');
 
-class TwilioDriver {
+class TwilioDriver extends BaseDriver {
     constructor() {
+        super(config);
+        this.providerName = 'twilio';
         this.accountSid = config.voice.twilio.accountSid;
         this.authToken = config.voice.twilio.authToken;
         this.phoneNumber = config.voice.twilio.phoneNumber;
         this.webhookUrl = config.voice.twilio.webhookUrl;
+    }
+
+    async initialize() {
+        console.log('📞 Initializing Twilio driver...');
         
         if (!this.accountSid || !this.authToken || !this.phoneNumber) {
             console.warn('⚠️  Twilio credentials not fully configured');
+            return false;
         }
+
+        console.log('✅ Twilio driver initialized successfully');
+        return true;
+    }
+
+    async validateConfig() {
+        const required = ['accountSid', 'authToken', 'phoneNumber'];
+        const missing = required.filter(key => !this[key]);
+        
+        if (missing.length > 0) {
+            console.warn(`⚠️  Missing Twilio configuration: ${missing.join(', ')}`);
+            return false;
+        }
+        
+        return true;
     }
 
     async handleInboundCall(payload) {
@@ -27,18 +50,16 @@ class TwilioDriver {
             // Generate TwiML response for voice interaction
             const twimlResponse = this.generateInboundTwiML();
 
-            return {
-                success: true,
+            return this.generateSuccessResponse({
                 callSid: callSid,
                 from: from,
                 to: to,
                 status: callStatus,
-                twiml: twimlResponse,
-                message: 'Inbound call processed successfully'
-            };
+                twiml: twimlResponse
+            }, 'Inbound call processed successfully');
         } catch (error) {
             console.error('❌ Error processing inbound call:', error);
-            throw new Error(`Failed to process inbound call: ${error.message}`);
+            return this.generateErrorResponse(`Failed to process inbound call: ${error.message}`);
         }
     }
 
@@ -50,7 +71,7 @@ class TwilioDriver {
             const { to, message, callbackUrl } = payload;
 
             if (!to) {
-                throw new Error('Recipient phone number is required');
+                return this.generateErrorResponse('Recipient phone number is required', 400);
             }
 
             // In a real implementation, you would use Twilio's SDK
@@ -65,17 +86,15 @@ class TwilioDriver {
 
             console.log('📞 Simulating outbound call with data:', callData);
 
-            return {
-                success: true,
+            return this.generateSuccessResponse({
                 callSid: `simulated_${Date.now()}`,
                 to: to,
                 from: this.phoneNumber,
-                status: 'initiated',
-                message: 'Outbound call initiated successfully'
-            };
+                status: 'initiated'
+            }, 'Outbound call initiated successfully');
         } catch (error) {
             console.error('❌ Error initiating outbound call:', error);
-            throw new Error(`Failed to initiate outbound call: ${error.message}`);
+            return this.generateErrorResponse(`Failed to initiate outbound call: ${error.message}`);
         }
     }
 
@@ -87,23 +106,21 @@ class TwilioDriver {
             const { text, voice = 'alice', language = 'en-US' } = payload;
 
             if (!text) {
-                throw new Error('Text content is required for TTS');
+                return this.generateErrorResponse('Text content is required for TTS', 400);
             }
 
             // Generate TwiML with TTS
             const twimlResponse = this.generateTTSResponse(text, voice, language);
 
-            return {
-                success: true,
+            return this.generateSuccessResponse({
                 text: text,
                 voice: voice,
                 language: language,
-                twiml: twimlResponse,
-                message: 'TTS processed successfully'
-            };
+                twiml: twimlResponse
+            }, 'TTS processed successfully');
         } catch (error) {
             console.error('❌ Error processing TTS:', error);
-            throw new Error(`Failed to process TTS: ${error.message}`);
+            return this.generateErrorResponse(`Failed to process TTS: ${error.message}`);
         }
     }
 
@@ -115,51 +132,22 @@ class TwilioDriver {
             const { to, message, from = this.phoneNumber } = payload;
 
             if (!to || !message) {
-                throw new Error('Recipient and message are required for SMS');
+                return this.generateErrorResponse('Recipient and message are required for SMS', 400);
             }
 
             // In a real implementation, you would use Twilio's SDK
             console.log('📱 Simulating SMS send:', { to, from, message });
 
-            return {
-                success: true,
+            return this.generateSuccessResponse({
                 messageSid: `simulated_sms_${Date.now()}`,
                 to: to,
                 from: from,
-                status: 'sent',
-                message: 'SMS sent successfully'
-            };
+                status: 'sent'
+            }, 'SMS sent successfully');
         } catch (error) {
             console.error('❌ Error sending SMS:', error);
-            throw new Error(`Failed to send SMS: ${error.message}`);
+            return this.generateErrorResponse(`Failed to send SMS: ${error.message}`);
         }
-    }
-
-    generateInboundTwiML() {
-        return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Gather input="speech" timeout="3" action="/voice/process-speech" method="POST">
-        <Say voice="alice">Hello! I'm your AI voice assistant. How can I help you today?</Say>
-    </Gather>
-    <Say voice="alice">I didn't hear anything. Please try again.</Say>
-</Response>`;
-    }
-
-    generateOutboundTwiML(message) {
-        return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say voice="alice">${message || 'Hello! This is an automated call from your AI assistant.'}</Say>
-    <Gather input="speech" timeout="3" action="/voice/process-speech" method="POST">
-        <Say voice="alice">Please respond to continue our conversation.</Say>
-    </Gather>
-</Response>`;
-    }
-
-    generateTTSResponse(text, voice = 'alice', language = 'en-US') {
-        return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say voice="${voice}" language="${language}">${text}</Say>
-</Response>`;
     }
 
     async processSpeech(payload) {
@@ -188,6 +176,45 @@ class TwilioDriver {
             console.error('❌ Error processing speech:', error);
             return this.generateTTSResponse("I'm sorry, I encountered an error. Please try again.");
         }
+    }
+
+    async getStatus() {
+        return {
+            provider: this.providerName,
+            status: 'operational',
+            capabilities: ['inbound_calls', 'outbound_calls', 'tts', 'sms', 'speech_processing'],
+            config: {
+                phoneNumber: this.phoneNumber,
+                webhookUrl: this.webhookUrl
+            }
+        };
+    }
+
+    generateInboundTwiML() {
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Gather input="speech" timeout="3" action="/voice/process-speech" method="POST">
+        <Say voice="alice">Hello! I'm your AI voice assistant. How can I help you today?</Say>
+    </Gather>
+    <Say voice="alice">I didn't hear anything. Please try again.</Say>
+</Response>`;
+    }
+
+    generateOutboundTwiML(message) {
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="alice">${message || 'Hello! This is an automated call from your AI assistant.'}</Say>
+    <Gather input="speech" timeout="3" action="/voice/process-speech" method="POST">
+        <Say voice="alice">Please respond to continue our conversation.</Say>
+    </Gather>
+</Response>`;
+    }
+
+    generateTTSResponse(text, voice = 'alice', language = 'en-US') {
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="${voice}" language="${language}">${text}</Say>
+</Response>`;
     }
 
     async forwardToOrchestrator(data) {

@@ -76,3 +76,19 @@ CORS_CREDENTIALS=false
 # - Use environment-specific .env files (.env.production, .env.staging)
 # - Consider using a secrets management service for production
 # - Rotate API keys regularly 
+
+# ============================================================================
+# AFRICA'S TALKING CONFIGURATION (if using africastalking)
+# ============================================================================
+AFRICASTALKING_USERNAME=your_africastalking_username
+AFRICASTALKING_API_KEY=your_africastalking_api_key
+AFRICASTALKING_PHONE_NUMBER=+254700000000
+AFRICASTALKING_WEBHOOK_URL=http://localhost:3000/voice/webhook 
+
+# ============================================================================
+# EXOTEL CONFIGURATION (if using exotel)
+# ============================================================================
+EXOTEL_SID=your_exotel_sid
+EXOTEL_TOKEN=your_exotel_token
+EXOTEL_PHONE_NUMBER=+911234567890
+EXOTEL_WEBHOOK_URL=http://localhost:3000/voice/webhook 

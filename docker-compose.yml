@@ -1,0 +1,165 @@
+version: '3.8'
+
+services:
+  # Python Orchestrator Backend
+  orchestrator:
+    build:
+      context: ./backend-python-orchestrator
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - NODE_ENV=development
+      # Voice Provider Configuration
+      - VOICE_PROVIDER=${VOICE_PROVIDER:-twilio}
+      # Twilio Configuration
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+      # Vonage Configuration
+      - VONAGE_API_KEY=${VONAGE_API_KEY}
+      - VONAGE_API_SECRET=${VONAGE_API_SECRET}
+      - VONAGE_APPLICATION_ID=${VONAGE_APPLICATION_ID}
+      - VONAGE_PRIVATE_KEY=${VONAGE_PRIVATE_KEY}
+      - VONAGE_PHONE_NUMBER=${VONAGE_PHONE_NUMBER}
+      # AWS Connect Configuration
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_CONNECT_INSTANCE_ID=${AWS_CONNECT_INSTANCE_ID}
+      - AWS_CONNECT_PHONE_NUMBER=${AWS_CONNECT_PHONE_NUMBER}
+      # Generic HTTP Configuration
+      - GENERIC_HTTP_WEBHOOK_URL=${GENERIC_HTTP_WEBHOOK_URL}
+      - GENERIC_HTTP_API_KEY=${GENERIC_HTTP_API_KEY}
+      - GENERIC_HTTP_HEADERS=${GENERIC_HTTP_HEADERS}
+      - GENERIC_HTTP_TIMEOUT=${GENERIC_HTTP_TIMEOUT:-30000}
+      # Other Configuration
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - REDIS_URL=redis://redis:6379
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - SECTOR=generic
+      - DEBUG=true
+    volumes:
+      - ./backend-python-orchestrator:/app
+      - chroma_data:/app/chroma_db
+    depends_on:
+      - redis
+      - chromadb
+    networks:
+      - voice-agent-network
+    restart: unless-stopped
+
+  # Node.js Realtime Backend
+  realtime:
+    build:
+      context: ./backend-node-realtime
+    env_file:
+      - ./backend-node-realtime/.env
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - HOST=0.0.0.0
+      - VOICE_PROVIDER=${VOICE_PROVIDER:-twilio}
+      # Twilio Configuration
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+      - TWILIO_WEBHOOK_URL=${TWILIO_WEBHOOK_URL:-http://localhost:3000/voice/webhook}
+      # Vonage Configuration
+      - VONAGE_API_KEY=${VONAGE_API_KEY}
+      - VONAGE_API_SECRET=${VONAGE_API_SECRET}
+      - VONAGE_APPLICATION_ID=${VONAGE_APPLICATION_ID}
+      - VONAGE_PRIVATE_KEY=${VONAGE_PRIVATE_KEY}
+      - VONAGE_PHONE_NUMBER=${VONAGE_PHONE_NUMBER}
+      - VONAGE_WEBHOOK_URL=${VONAGE_WEBHOOK_URL:-http://localhost:3000/voice/webhook}
+      # AWS Connect Configuration
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_CONNECT_INSTANCE_ID=${AWS_CONNECT_INSTANCE_ID}
+      - AWS_CONNECT_PHONE_NUMBER=${AWS_CONNECT_PHONE_NUMBER}
+      - AWS_CONNECT_WEBHOOK_URL=${AWS_CONNECT_WEBHOOK_URL:-http://localhost:3000/voice/webhook}
+      # Generic HTTP Configuration
+      - GENERIC_HTTP_WEBHOOK_URL=${GENERIC_HTTP_WEBHOOK_URL}
+      - GENERIC_HTTP_API_KEY=${GENERIC_HTTP_API_KEY}
+      - GENERIC_HTTP_HEADERS=${GENERIC_HTTP_HEADERS}
+      - GENERIC_HTTP_TIMEOUT=${GENERIC_HTTP_TIMEOUT:-30000}
+      # Other Configuration
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - ORCHESTRATOR_URL=http://orchestrator:8000
+      - ORCHESTRATOR_TIMEOUT=30000
+      - ORCHESTRATOR_RETRIES=3
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - CORS_ORIGIN=*
+      - CORS_CREDENTIALS=false
+      - LOG_LEVEL=debug
+      - DEBUG=true
+    depends_on:
+      - orchestrator
+      - redis
+    networks:
+      - voice-agent-network
+    restart: unless-stopped
+
+  # Redis for caching and session storage
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - voice-agent-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # ChromaDB for vector storage
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - voice-agent-network
+    restart: unless-stopped
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+      - CHROMA_SERVER_CORS_ALLOW_ORIGINS=["*"]
+
+  # Nginx reverse proxy (optional)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - orchestrator
+      - realtime
+    networks:
+      - voice-agent-network
+    restart: unless-stopped
+    profiles:
+      - production
+
+volumes:
+  redis_data:
+  chroma_data:
+
+networks:
+  voice-agent-network:
+    driver: bridge 

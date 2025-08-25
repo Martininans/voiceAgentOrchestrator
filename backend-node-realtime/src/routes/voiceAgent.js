@@ -128,6 +128,110 @@ module.exports = async function (fastify, opts) {
             }
         };
     });
+
+    // Provider management routes
+    fastify.get('/providers', async (request, reply) => {
+        console.log('📋 Received providers list request');
+        try {
+            const providers = VoiceAgent.getAvailableProviders();
+            const currentProvider = VoiceAgent.provider;
+            const capabilities = await VoiceAgent.getProviderCapabilities();
+            
+            return {
+                current: currentProvider,
+                available: providers,
+                capabilities: capabilities
+            };
+        } catch (error) {
+            console.error('❌ Error getting providers:', error);
+            reply.code(500).send({ error: error.message });
+        }
+    });
+
+    fastify.post('/providers/switch', async (request, reply) => {
+        console.log('🔄 Received provider switch request');
+        try {
+            const { provider } = request.body;
+            
+            if (!provider) {
+                return reply.code(400).send({ error: 'Provider name is required' });
+            }
+
+            const result = await VoiceAgent.switchProvider(provider);
+            
+            return {
+                success: true,
+                message: `Successfully switched to ${provider}`,
+                provider: provider
+            };
+        } catch (error) {
+            console.error('❌ Error switching provider:', error);
+            reply.code(500).send({ error: error.message });
+        }
+    });
+
+    fastify.get('/providers/:provider/capabilities', async (request, reply) => {
+        console.log('📋 Received provider capabilities request');
+        try {
+            const { provider } = request.params;
+            const capabilities = await VoiceAgent.getProviderCapabilities(provider);
+            
+            if (!capabilities) {
+                return reply.code(404).send({ error: `Provider ${provider} not found` });
+            }
+            
+            return {
+                provider: provider,
+                capabilities: capabilities
+            };
+        } catch (error) {
+            console.error('❌ Error getting provider capabilities:', error);
+            reply.code(500).send({ error: error.message });
+        }
+    });
+
+    // Provider-specific webhook endpoints
+    fastify.post('/webhooks/vonage', async (request, reply) => {
+        console.log('🔗 Received Vonage webhook');
+        try {
+            const webhookData = request.body;
+            console.log('Vonage webhook data:', webhookData);
+            
+            // Handle Vonage-specific webhook processing
+            return { success: true, message: 'Vonage webhook processed' };
+        } catch (error) {
+            console.error('❌ Error processing Vonage webhook:', error);
+            reply.code(500).send({ error: error.message });
+        }
+    });
+
+    fastify.post('/webhooks/aws-connect', async (request, reply) => {
+        console.log('🔗 Received AWS Connect webhook');
+        try {
+            const webhookData = request.body;
+            console.log('AWS Connect webhook data:', webhookData);
+            
+            // Handle AWS Connect-specific webhook processing
+            return { success: true, message: 'AWS Connect webhook processed' };
+        } catch (error) {
+            console.error('❌ Error processing AWS Connect webhook:', error);
+            reply.code(500).send({ error: error.message });
+        }
+    });
+
+    fastify.post('/webhooks/generic', async (request, reply) => {
+        console.log('🔗 Received Generic HTTP webhook');
+        try {
+            const webhookData = request.body;
+            console.log('Generic webhook data:', webhookData);
+            
+            // Handle generic webhook processing
+            return { success: true, message: 'Generic webhook processed' };
+        } catch (error) {
+            console.error('❌ Error processing generic webhook:', error);
+            reply.code(500).send({ error: error.message });
+        }
+    });
     
     console.log('✅ VoiceAgent routes registered successfully');
 };

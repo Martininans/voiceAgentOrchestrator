@@ -41,15 +41,57 @@ async function setupEnvironment() {
     envVars.HOST = await question('Server Host (default: 0.0.0.0): ') || '0.0.0.0';
     envVars.NODE_ENV = await question('Environment (default: development): ') || 'development';
     
-    // Voice Provider
+    // Voice Provider Selection
+    console.log('\n📞 Voice Provider Selection:');
+    console.log('Available providers: twilio, vonage, aws-connect, generic-http');
     envVars.VOICE_PROVIDER = await question('Voice Provider (default: twilio): ') || 'twilio';
     
-    // Twilio Configuration
-    console.log('\n📞 Twilio Configuration:');
-    envVars.TWILIO_ACCOUNT_SID = await question('Twilio Account SID: ') || 'your-twilio-account-sid-here';
-    envVars.TWILIO_AUTH_TOKEN = await question('Twilio Auth Token: ') || 'your-twilio-auth-token-here';
-    envVars.TWILIO_PHONE_NUMBER = await question('Twilio Phone Number: ') || '+1234567890';
-    envVars.TWILIO_WEBHOOK_URL = await question('Twilio Webhook URL (default: http://localhost:3000/voice/webhook): ') || 'http://localhost:3000/voice/webhook';
+    // Provider-specific configuration
+    switch (envVars.VOICE_PROVIDER.toLowerCase()) {
+        case 'twilio':
+            console.log('\n📞 Twilio Configuration:');
+            envVars.TWILIO_ACCOUNT_SID = await question('Twilio Account SID: ') || 'your-twilio-account-sid-here';
+            envVars.TWILIO_AUTH_TOKEN = await question('Twilio Auth Token: ') || 'your-twilio-auth-token-here';
+            envVars.TWILIO_PHONE_NUMBER = await question('Twilio Phone Number: ') || '+1234567890';
+            envVars.TWILIO_WEBHOOK_URL = await question('Twilio Webhook URL (default: http://localhost:3000/voice/webhook): ') || 'http://localhost:3000/voice/webhook';
+            break;
+            
+        case 'vonage':
+            console.log('\n📞 Vonage Configuration:');
+            envVars.VONAGE_API_KEY = await question('Vonage API Key: ') || 'your-vonage-api-key-here';
+            envVars.VONAGE_API_SECRET = await question('Vonage API Secret: ') || 'your-vonage-api-secret-here';
+            envVars.VONAGE_APPLICATION_ID = await question('Vonage Application ID (optional): ') || 'your-vonage-application-id-here';
+            envVars.VONAGE_PRIVATE_KEY = await question('Vonage Private Key (optional): ') || 'your-vonage-private-key-here';
+            envVars.VONAGE_PHONE_NUMBER = await question('Vonage Phone Number: ') || '+1234567890';
+            envVars.VONAGE_WEBHOOK_URL = await question('Vonage Webhook URL (default: http://localhost:3000/voice/webhook): ') || 'http://localhost:3000/voice/webhook';
+            break;
+            
+        case 'aws-connect':
+            console.log('\n📞 AWS Connect Configuration:');
+            envVars.AWS_ACCESS_KEY_ID = await question('AWS Access Key ID: ') || 'your-aws-access-key-id-here';
+            envVars.AWS_SECRET_ACCESS_KEY = await question('AWS Secret Access Key: ') || 'your-aws-secret-access-key-here';
+            envVars.AWS_REGION = await question('AWS Region (default: us-east-1): ') || 'us-east-1';
+            envVars.AWS_CONNECT_INSTANCE_ID = await question('AWS Connect Instance ID: ') || 'your-aws-connect-instance-id-here';
+            envVars.AWS_CONNECT_PHONE_NUMBER = await question('AWS Connect Phone Number: ') || '+1234567890';
+            envVars.AWS_CONNECT_WEBHOOK_URL = await question('AWS Connect Webhook URL (default: http://localhost:3000/voice/webhook): ') || 'http://localhost:3000/voice/webhook';
+            break;
+            
+        case 'generic-http':
+            console.log('\n📞 Generic HTTP Configuration:');
+            envVars.GENERIC_HTTP_WEBHOOK_URL = await question('Generic HTTP Webhook URL: ') || 'https://your-voice-provider.com/api';
+            envVars.GENERIC_HTTP_API_KEY = await question('Generic HTTP API Key (optional): ') || 'your-generic-http-api-key-here';
+            envVars.GENERIC_HTTP_TIMEOUT = await question('Generic HTTP Timeout (default: 30000): ') || '30000';
+            break;
+            
+        default:
+            console.log(`⚠️  Unknown provider: ${envVars.VOICE_PROVIDER}. Using Twilio as fallback.`);
+            envVars.VOICE_PROVIDER = 'twilio';
+            console.log('\n📞 Twilio Configuration:');
+            envVars.TWILIO_ACCOUNT_SID = await question('Twilio Account SID: ') || 'your-twilio-account-sid-here';
+            envVars.TWILIO_AUTH_TOKEN = await question('Twilio Auth Token: ') || 'your-twilio-auth-token-here';
+            envVars.TWILIO_PHONE_NUMBER = await question('Twilio Phone Number: ') || '+1234567890';
+            envVars.TWILIO_WEBHOOK_URL = await question('Twilio Webhook URL (default: http://localhost:3000/voice/webhook): ') || 'http://localhost:3000/voice/webhook';
+    }
     
     // Supabase Configuration
     console.log('\n🗄️  Supabase Configuration:');
@@ -103,10 +145,31 @@ NODE_ENV=${envVars.NODE_ENV}
 VOICE_PROVIDER=${envVars.VOICE_PROVIDER}
 
 # Twilio Configuration
-TWILIO_ACCOUNT_SID=${envVars.TWILIO_ACCOUNT_SID}
-TWILIO_AUTH_TOKEN=${envVars.TWILIO_AUTH_TOKEN}
-TWILIO_PHONE_NUMBER=${envVars.TWILIO_PHONE_NUMBER}
-TWILIO_WEBHOOK_URL=${envVars.TWILIO_WEBHOOK_URL}
+TWILIO_ACCOUNT_SID=${envVars.TWILIO_ACCOUNT_SID || ''}
+TWILIO_AUTH_TOKEN=${envVars.TWILIO_AUTH_TOKEN || ''}
+TWILIO_PHONE_NUMBER=${envVars.TWILIO_PHONE_NUMBER || ''}
+TWILIO_WEBHOOK_URL=${envVars.TWILIO_WEBHOOK_URL || ''}
+
+# Vonage Configuration
+VONAGE_API_KEY=${envVars.VONAGE_API_KEY || ''}
+VONAGE_API_SECRET=${envVars.VONAGE_API_SECRET || ''}
+VONAGE_APPLICATION_ID=${envVars.VONAGE_APPLICATION_ID || ''}
+VONAGE_PRIVATE_KEY=${envVars.VONAGE_PRIVATE_KEY || ''}
+VONAGE_PHONE_NUMBER=${envVars.VONAGE_PHONE_NUMBER || ''}
+VONAGE_WEBHOOK_URL=${envVars.VONAGE_WEBHOOK_URL || ''}
+
+# AWS Connect Configuration
+AWS_ACCESS_KEY_ID=${envVars.AWS_ACCESS_KEY_ID || ''}
+AWS_SECRET_ACCESS_KEY=${envVars.AWS_SECRET_ACCESS_KEY || ''}
+AWS_REGION=${envVars.AWS_REGION || ''}
+AWS_CONNECT_INSTANCE_ID=${envVars.AWS_CONNECT_INSTANCE_ID || ''}
+AWS_CONNECT_PHONE_NUMBER=${envVars.AWS_CONNECT_PHONE_NUMBER || ''}
+AWS_CONNECT_WEBHOOK_URL=${envVars.AWS_CONNECT_WEBHOOK_URL || ''}
+
+# Generic HTTP Configuration
+GENERIC_HTTP_WEBHOOK_URL=${envVars.GENERIC_HTTP_WEBHOOK_URL || ''}
+GENERIC_HTTP_API_KEY=${envVars.GENERIC_HTTP_API_KEY || ''}
+GENERIC_HTTP_TIMEOUT=${envVars.GENERIC_HTTP_TIMEOUT || ''}
 
 # Supabase Configuration
 SUPABASE_URL=${envVars.SUPABASE_URL}
@@ -158,10 +221,16 @@ DEBUG=${envVars.DEBUG}
         fs.writeFileSync(envPath, envContent);
         console.log('\n✅ .env file created successfully!');
         console.log(`📁 Location: ${envPath}`);
+        console.log(`🎯 Voice Provider: ${envVars.VOICE_PROVIDER}`);
         console.log('\n🔧 Next steps:');
         console.log('1. Update the .env file with your actual API keys and credentials');
         console.log('2. Run "npm start" to start the server');
         console.log('3. Check the logs for any configuration warnings');
+        console.log('\n📚 Available voice providers:');
+        console.log('- twilio: Twilio Voice API');
+        console.log('- vonage: Vonage (formerly Nexmo)');
+        console.log('- aws-connect: AWS Amazon Connect');
+        console.log('- generic-http: Any HTTP-based voice provider');
     } catch (error) {
         console.error('❌ Error creating .env file:', error.message);
     }

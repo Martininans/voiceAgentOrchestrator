@@ -8,21 +8,21 @@ import os
 from dotenv import load_dotenv
 import logging
 
+# Setup logging
+logger = logging.getLogger(__name__)
 # Import agents
 from app.agents.input_agent import InputAgent
 from app.agents.orchestrator_agent import OrchestratorAgent
 from app.agents.memory_agent import MemoryAgent
 from app.agents.tool_agent import ToolAgents
 from app.voice_agent_base import create_voice_agent, ChannelType
-
 # Import websocket_auth
 from app.websocket_auth import websocket_auth, require_admin_ws, WSUser
-
 # Import optimization implementations
 from app.optimization_implementations import initialize_optimizations, cache_manager, rate_limiter, db_manager, concurrent_processor, api_optimizer, memory_monitor
+dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+load_dotenv(dotenv_path)
 
-# Load environment variables
-load_dotenv()
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -81,7 +81,7 @@ input_agent = InputAgent()
 orchestrator_agent = OrchestratorAgent()
 memory_agent = MemoryAgent()
 tool_agents = ToolAgents(sector_config)
-voice_agent = create_voice_agent({"provider": "twilio"})
+voice_agent = create_voice_agent()
 
 # WebSocket manager
 class ConnectionManager:
@@ -174,6 +174,140 @@ async def process_intent(request: TextRequest):
         "intent": intent_result["intent"],
         "response": tool_response
     }
+
+# --- VONAGE WEBHOOK ENDPOINTS ---
+
+@app.post("/webhook/vonage/answer")
+async def vonage_answer_webhook(request: Request):
+    """Handle incoming call answer webhook from Vonage"""
+    try:
+        form_data = await request.form()
+        
+        # Log the webhook data
+        logger.info(f"Vonage answer webhook received: {dict(form_data)}")
+        
+        # Extract call details
+        call_uuid = form_data.get("uuid")
+        from_number = form_data.get("from")
+        to_number = form_data.get("to")
+        
+        # Create NCCO (Nexmo Call Control Object) response
+        ncco = [
+            {
+                "action": "talk",
+                "text": "Hello! Welcome to the AI Voice Agent. How can I help you today?",
+                "voiceName": "Amy"
+            },
+            {
+                "action": "input",
+                "type": ["speech"],
+                "speech": {
+                    "endOnSilence": 3,
+                    "language": "en-US"
+                },
+                "eventUrl": [f"{request.base_url}webhook/vonage/speech"]
+            }
+        ]
+        
+        return {"ncco": ncco}
+        
+    except Exception as e:
+        logger.error(f"Error in Vonage answer webhook: {e}")
+        return {"error": str(e)}
+
+@app.post("/webhook/vonage/speech")
+async def vonage_speech_webhook(request: Request):
+    """Handle speech input from Vonage"""
+    try:
+        form_data = await request.form()
+        
+        # Log the speech data
+        logger.info(f"Vonage speech webhook received: {dict(form_data)}")
+        
+        # Extract speech details
+        speech_results = form_data.get("speech", {})
+        text = speech_results.get("results", [{}])[0].get("text", "")
+        
+        if text:
+            # Process the speech through your AI agents
+            intent_result = await orchestrator_agent.determine_intent(
+                text=text,
+                context={}
+            )
+            tool_response = await tool_agents.route_to_tool(
+                intent=intent_result["intent"],
+                text=text,
+                context={}
+            )
+            
+            # Create response NCCO
+            ncco = [
+                {
+                    "action": "talk",
+                    "text": tool_response,
+                    "voiceName": "Amy"
+                },
+                {
+                    "action": "input",
+                    "type": ["speech"],
+                    "speech": {
+                        "endOnSilence": 3,
+                        "language": "en-US"
+                    },
+                    "eventUrl": [f"{request.base_url}webhook/vonage/speech"]
+                }
+            ]
+        else:
+            # No speech detected, ask again
+            ncco = [
+                {
+                    "action": "talk",
+                    "text": "I didn't catch that. Could you please repeat?",
+                    "voiceName": "Amy"
+                },
+                {
+                    "action": "input",
+                    "type": ["speech"],
+                    "speech": {
+                        "endOnSilence": 3,
+                        "language": "en-US"
+                    },
+                    "eventUrl": [f"{request.base_url}webhook/vonage/speech"]
+                }
+            ]
+        
+        return {"ncco": ncco}
+        
+    except Exception as e:
+        logger.error(f"Error in Vonage speech webhook: {e}")
+        return {"error": str(e)}
+
+@app.post("/webhook/vonage/event")
+async def vonage_event_webhook(request: Request):
+    """Handle general events from Vonage (call status, etc.)"""
+    try:
+        form_data = await request.form()
+        
+        # Log the event
+        logger.info(f"Vonage event webhook received: {dict(form_data)}")
+        
+        # Handle different event types
+        event_type = form_data.get("status")
+        
+        if event_type == "completed":
+            logger.info("Call completed")
+        elif event_type == "answered":
+            logger.info("Call answered")
+        elif event_type == "busy":
+            logger.info("Call busy")
+        elif event_type == "failed":
+            logger.info("Call failed")
+        
+        return {"status": "ok"}
+        
+    except Exception as e:
+        logger.error(f"Error in Vonage event webhook: {e}")
+        return {"error": str(e)}
 
 # --- WEBSOCKET (SECURED) ---
 

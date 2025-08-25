@@ -27,19 +27,62 @@ class SupabaseService {
     // Test connection
     async testConnection() {
         try {
+            console.log('🔍 Testing Supabase connection to:', this.config.url);
+            
+            // Extract domain from URL for DNS test
+            const url = new URL(this.config.url);
+            const domain = url.hostname;
+            console.log('🔍 Testing DNS resolution for:', domain);
+            
+            // Test DNS resolution (this will help identify if it's a DNS issue)
+            try {
+                const dns = require('dns').promises;
+                const addresses = await dns.resolve4(domain);
+                console.log('✅ DNS resolution successful, IPs:', addresses);
+            } catch (dnsError) {
+                console.warn('⚠️  DNS resolution failed:', dnsError.message);
+                return { connected: false, error: `DNS resolution failed: ${dnsError.message}` };
+            }
+            
+            // First, test basic HTTP connectivity to Supabase
+            try {
+                const response = await fetch(this.config.url);
+                console.log('✅ HTTP connectivity to Supabase successful, status:', response.status);
+            } catch (httpError) {
+                console.warn('⚠️  HTTP connectivity test failed:', httpError.message);
+                return { connected: false, error: `HTTP connectivity failed: ${httpError.message}` };
+            }
+            
+            // Use a simpler test that doesn't require specific tables
             const { data, error } = await this.client
-                .from('voice_interactions')
-                .select('count')
-                .limit(1);
+                .rpc('version'); // This calls a built-in function
             
             if (error) {
+                console.log('⚠️  RPC test failed, trying fallback test...');
+                
+                // If RPC fails, try a simple query to test connection
+                const { error: queryError } = await this.client
+                    .from('_dummy_table_that_doesnt_exist')
+                    .select('*')
+                    .limit(1);
+                
+                // If we get a specific error about the table not existing, connection is working
+                if (queryError && queryError.message.includes('does not exist')) {
+                    console.log('✅ Supabase connection successful (fallback test)');
+                    return { connected: true, message: 'Supabase connected successfully (table test)' };
+                }
+                
                 console.warn('⚠️  Supabase connection test failed:', error.message);
+                console.warn('🔍 Query error details:', queryError);
                 return { connected: false, error: error.message };
             }
             
+            console.log('✅ Supabase connection successful');
             return { connected: true, message: 'Supabase connected successfully' };
         } catch (error) {
             console.warn('⚠️  Supabase connection error:', error.message);
+            console.warn('🔍 Error type:', error.constructor.name);
+            console.warn('🔍 Error stack:', error.stack);
             return { connected: false, error: error.message };
         }
     }

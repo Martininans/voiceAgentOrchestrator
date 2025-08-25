@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  # Python Orchestrator Backend - Staging
+  orchestrator-staging:
+    build:
+      context: ./backend-python-orchestrator
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"  # Different port for staging
+    environment:
+      - NODE_ENV=staging
+      - VOICE_PROVIDER=${VOICE_PROVIDER:-twilio}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - REDIS_URL=redis://redis-staging:6379
+      - CHROMA_HOST=chromadb-staging
+      - CHROMA_PORT=8000
+      - SECTOR=generic
+      - DEBUG=true
+    volumes:
+      - ./backend-python-orchestrator:/app
+      - chroma_data_staging:/app/chroma_db
+    depends_on:
+      - redis-staging
+      - chromadb-staging
+    networks:
+      - voice-agent-staging
+    restart: unless-stopped
+
+  # Node.js Realtime Backend - Staging
+  realtime-staging:
+    build:
+      context: ./backend-node-realtime
+    ports:
+      - "3001:3000"  # Different port for staging
+    environment:
+      - NODE_ENV=staging
+      - PORT=3000
+      - HOST=0.0.0.0
+      - VOICE_PROVIDER=${VOICE_PROVIDER:-twilio}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - ORCHESTRATOR_URL=http://orchestrator-staging:8000
+      - JWT_SECRET=${JWT_SECRET}
+      - CORS_ORIGIN=*
+      - DEBUG=true
+    depends_on:
+      - orchestrator-staging
+      - redis-staging
+    networks:
+      - voice-agent-staging
+    restart: unless-stopped
+
+  # Redis for staging
+  redis-staging:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"  # Different port for staging
+    volumes:
+      - redis_data_staging:/data
+    networks:
+      - voice-agent-staging
+    restart: unless-stopped
+
+  # ChromaDB for staging
+  chromadb-staging:
+    image: chromadb/chroma:latest
+    ports:
+      - "8002:8000"  # Different port for staging
+    volumes:
+      - chroma_data_staging:/chroma/chroma
+    networks:
+      - voice-agent-staging
+    restart: unless-stopped
+
+volumes:
+  redis_data_staging:
+  chroma_data_staging:
+
+networks:
+  voice-agent-staging:
+    driver: bridge 

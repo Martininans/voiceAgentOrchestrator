@@ -1,0 +1,96 @@
+# ============================================================================
+# VOICE AGENT ORCHESTRATOR - ENVIRONMENT CONFIGURATION
+# ============================================================================
+
+# ============================================================================
+# VOICE PROVIDER CONFIGURATION
+# ============================================================================
+# Choose your voice provider: twilio, vonage, aws-connect, generic-http
+VOICE_PROVIDER=twilio
+
+# ============================================================================
+# TWILIO CONFIGURATION (if using twilio)
+# ============================================================================
+TWILIO_ACCOUNT_SID=your_twilio_account_sid
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_PHONE_NUMBER=+1234567890
+TWILIO_WEBHOOK_URL=http://localhost:3000/voice/webhook
+
+# ============================================================================
+# VONAGE CONFIGURATION (if using vonage)
+# ============================================================================
+VONAGE_API_KEY=your_vonage_api_key
+VONAGE_API_SECRET=your_vonage_api_secret
+VONAGE_APPLICATION_ID=your_vonage_application_id
+VONAGE_PRIVATE_KEY=your_vonage_private_key
+VONAGE_PHONE_NUMBER=+2341234567890
+VONAGE_WEBHOOK_URL=http://localhost:3000/voice/webhook
+
+# ============================================================================
+# AWS CONNECT CONFIGURATION (if using aws-connect)
+# ============================================================================
+AWS_ACCESS_KEY_ID=your_aws_access_key_id
+AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
+AWS_REGION=us-east-1
+AWS_CONNECT_INSTANCE_ID=your_aws_connect_instance_id
+AWS_CONNECT_PHONE_NUMBER=+1234567890
+AWS_CONNECT_WEBHOOK_URL=http://localhost:3000/voice/webhook
+
+# ============================================================================
+# GENERIC HTTP CONFIGURATION (if using generic-http)
+# ============================================================================
+GENERIC_HTTP_WEBHOOK_URL=https://your-voice-service.com/webhook
+GENERIC_HTTP_API_KEY=your_generic_api_key
+GENERIC_HTTP_HEADERS={"Authorization": "Bearer your_token"}
+GENERIC_HTTP_TIMEOUT=30000
+
+# ============================================================================
+# SUPABASE CONFIGURATION
+# ============================================================================
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
+# ============================================================================
+# JWT CONFIGURATION
+# ============================================================================
+JWT_SECRET=your_jwt_secret_key_here
+
+# ============================================================================
+# OPENAI CONFIGURATION
+# ============================================================================
+OPENAI_API_KEY=your_openai_api_key
+
+# ============================================================================
+# REDIS CONFIGURATION
+# ============================================================================
+REDIS_URL=redis://localhost:6379
+
+# ============================================================================
+# APPLICATION CONFIGURATION
+# ============================================================================
+NODE_ENV=development
+PORT=3000
+HOST=0.0.0.0
+DEBUG=true
+LOG_LEVEL=debug
+CORS_ORIGIN=*
+CORS_CREDENTIALS=false
+
+# ============================================================================
+# ORCHESTRATOR CONFIGURATION
+# ============================================================================
+ORCHESTRATOR_URL=http://orchestrator:8000
+ORCHESTRATOR_TIMEOUT=30000
+ORCHESTRATOR_RETRIES=3
+
+# ============================================================================
+# CHROMA CONFIGURATION
+# ============================================================================
+CHROMA_HOST=localhost
+CHROMA_PORT=8000
+
+# ============================================================================
+# SECTOR CONFIGURATION
+# ============================================================================
+SECTOR=generic 
