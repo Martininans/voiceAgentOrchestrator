@@ -1,0 +1,59 @@
+# Example Terraform variables file for Azure Voice Agent Orchestrator
+# Copy this file to terraform.tfvars and update the values
+
+# Basic Configuration
+resource_group_name = "voice-agent-rg"
+location           = "East US"
+environment        = "production"
+app_name          = "voice-agent-orchestrator"
+
+# PostgreSQL Configuration
+postgres_admin_username = "voiceagentadmin"
+postgres_sku_name      = "GP_Standard_D2s_v3"
+
+# Redis Configuration
+redis_sku_name = "Standard"
+redis_capacity = 1
+
+# AKS Configuration
+aks_node_count     = 3
+aks_vm_size        = "Standard_D2s_v3"
+kubernetes_version = "1.28"
+
+# Container Registry
+container_registry_sku = "Standard"
+
+# Monitoring
+log_analytics_retention_days = 30
+enable_monitoring           = true
+
+# Storage
+storage_account_tier             = "Standard"
+storage_account_replication_type = "LRS"
+
+# Azure OpenAI
+openai_sku_name = "S0"
+
+# Security and Compliance
+enable_backup                = true
+backup_retention_days        = 7
+enable_high_availability     = false
+enable_geo_redundant_backup  = false
+enable_private_endpoints     = false
+enable_azure_policy          = true
+enable_security_center       = true
+
+# Network Configuration
+network_address_space        = "10.0.0.0/16"
+aks_subnet_address_prefix    = "10.0.1.0/24"
+allowed_ip_ranges           = ["0.0.0.0/0"]
+
+# Tags
+tags = {
+  Environment = "production"
+  Application = "voice-agent-orchestrator"
+  ManagedBy   = "Terraform"
+  Owner       = "DevOps Team"
+  CostCenter  = "Engineering"
+  Project     = "Voice Agent Platform"
+}

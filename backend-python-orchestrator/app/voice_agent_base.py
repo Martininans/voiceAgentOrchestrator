@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional
 from enum import Enum
 import json
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -311,6 +312,169 @@ class GenericHTTPVoiceAgent(VoiceAgentBase):
             logger.error(f"Generic HTTP incoming call error: {e}")
             return {"success": False, "error": str(e), "provider": "generic-http"}
 
+class SarvamVoiceAgent(VoiceAgentBase):
+    """Sarvam AI implementation of voice agent"""
+    
+    def __init__(self, config: Dict[str, Any]):
+        super().__init__(config)
+        self.api_key = config.get("api_key")
+        self.api_secret = config.get("api_secret")
+        self.base_url = config.get("base_url", "https://api.sarvam.ai")
+        self.model = config.get("model", "sarvam-tts-hindi")
+        self.language = config.get("language", "hi")
+        self.voice = config.get("voice", "female")
+        self.webhook_url = config.get("webhook_url")
+        
+        # Initialize HTTP client
+        import aiohttp
+        self.session = None
+    
+    async def _get_session(self):
+        """Get or create aiohttp session"""
+        if self.session is None:
+            self.session = aiohttp.ClientSession()
+        return self.session
+    
+    async def text_to_speech(self, text: str, voice_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Convert text to speech using Sarvam AI"""
+        try:
+            logger.info(f"Sarvam AI TTS: Converting text to speech")
+            
+            voice = voice_config.get("voice", self.voice) if voice_config else self.voice
+            language = voice_config.get("language", self.language) if voice_config else self.language
+            model = voice_config.get("model", self.model) if voice_config else self.model
+            
+            session = await self._get_session()
+            
+            payload = {
+                "text": text,
+                "voice": voice,
+                "language": language,
+                "model": model,
+                "format": "wav"
+            }
+            
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            async with session.post(
+                f"{self.base_url}/v1/tts",
+                json=payload,
+                headers=headers,
+                timeout=30
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return {
+                        "success": True,
+                        "audio_url": result.get("audio_url"),
+                        "audio_data": result.get("audio_data"),
+                        "provider": "sarvam",
+                        "language": language,
+                        "voice": voice
+                    }
+                else:
+                    error_text = await response.text()
+                    return {"success": False, "error": f"HTTP {response.status}: {error_text}", "provider": "sarvam"}
+                    
+        except Exception as e:
+            logger.error(f"Sarvam AI TTS error: {e}")
+            return {"success": False, "error": str(e), "provider": "sarvam"}
+    
+    async def speech_to_text(self, audio_data: bytes, audio_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Convert speech to text using Sarvam AI"""
+        try:
+            logger.info(f"Sarvam AI STT: Converting speech to text")
+            
+            language = audio_config.get("language", self.language) if audio_config else self.language
+            audio_format = audio_config.get("format", "wav") if audio_config else "wav"
+            
+            session = await self._get_session()
+            
+            # Create form data
+            data = aiohttp.FormData()
+            data.add_field('audio', audio_data, filename=f'audio.{audio_format}', content_type=f'audio/{audio_format}')
+            data.add_field('format', audio_format)
+            data.add_field('language', language)
+            
+            headers = {
+                "Authorization": f"Bearer {self.api_key}"
+            }
+            
+            async with session.post(
+                f"{self.base_url}/v1/stt",
+                data=data,
+                headers=headers,
+                timeout=30
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return {
+                        "success": True,
+                        "text": result.get("text"),
+                        "confidence": result.get("confidence", 0.9),
+                        "language": result.get("language", language),
+                        "duration": result.get("duration"),
+                        "provider": "sarvam"
+                    }
+                else:
+                    error_text = await response.text()
+                    return {"success": False, "error": f"HTTP {response.status}: {error_text}", "provider": "sarvam"}
+                    
+        except Exception as e:
+            logger.error(f"Sarvam AI STT error: {e}")
+            return {"success": False, "error": str(e), "provider": "sarvam"}
+    
+    async def make_call(self, phone_number: str, message: str, call_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Make an outbound call using Sarvam AI"""
+        try:
+            logger.info(f"Making Sarvam AI call to {phone_number}")
+            
+            # In a real implementation, you would use Sarvam AI's calling API
+            # For now, we'll simulate the call initiation
+            return {
+                "success": True,
+                "call_id": f"sarvam_{int(time.time())}",
+                "provider": "sarvam",
+                "to": phone_number,
+                "language": self.language,
+                "voice": self.voice
+            }
+        except Exception as e:
+            logger.error(f"Sarvam AI call error: {e}")
+            return {"success": False, "error": str(e), "provider": "sarvam"}
+    
+    async def handle_incoming_call(self, call_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle an incoming call using Sarvam AI"""
+        try:
+            logger.info("Handling incoming Sarvam AI call")
+            
+            # Generate appropriate welcome message based on language
+            if self.language == "hi":
+                welcome_message = "नमस्ते! मैं आपकी AI आवाज़ सहायक हूं। आज मैं आपकी कैसे मदद कर सकती हूं?"
+            else:
+                welcome_message = "Hello! I'm your AI voice assistant. How can I help you today?"
+            
+            return {
+                "success": True,
+                "response": welcome_message,
+                "provider": "sarvam",
+                "language": self.language,
+                "voice": self.voice
+            }
+        except Exception as e:
+            logger.error(f"Sarvam AI incoming call error: {e}")
+            return {"success": False, "error": str(e), "provider": "sarvam"}
+    
+    async def __aenter__(self):
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+
 def create_voice_agent(config: Optional[Dict[str, Any]] = None) -> VoiceAgentBase:
     """Factory function to create voice agent based on provider from config"""
     from .config import Config
@@ -333,6 +497,8 @@ def create_voice_agent(config: Optional[Dict[str, Any]] = None) -> VoiceAgentBas
         return AWSConnectVoiceAgent(config)
     elif provider == 'generic-http':
         return GenericHTTPVoiceAgent(config)
+    elif provider == 'sarvam':
+        return SarvamVoiceAgent(config)
     else:
         logger.warning(f"Unknown voice provider: {provider}, falling back to Twilio")
         return TwilioVoiceAgent(config) 

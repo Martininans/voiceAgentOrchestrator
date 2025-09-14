@@ -9,7 +9,7 @@ import logging
 import jwt
 import os
 
-from app.auth import supabase_auth, User  # Import your SupabaseAuth instance
+from app.auth import azure_auth, User  # Import your Azure AD B2C auth instance
 from app.config import Config
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ async def websocket_auth(websocket: WebSocket) -> WSUser:
     # 4️⃣ Verify token via SupabaseAuth or fallback
     try:
         # Prefer using your SupabaseAuth logic
-        payload = supabase_auth._verify_jwt_token(token)
+        payload = azure_auth._verify_jwt_token(token)
         
         user = WSUser(
             user_id=payload.get("sub"),

@@ -11,13 +11,69 @@ from app.optimization_implementations import (
     cache_result
 )
 
+# LangChain imports
+from pydantic import BaseModel, Field
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_openai import ChatOpenAI, AzureChatOpenAI
+
+
+class IntentSchema(BaseModel):
+    intent: str = Field(description="Determined intent")
+    confidence: float = Field(ge=0, le=1, description="Confidence between 0 and 1")
+    entities: Dict[str, Any] = Field(default_factory=dict)
+    context: str = ""
+
+
+def build_intent_chain():
+    provider = Config.llm_provider()
+    if provider == "azure":
+        azure_cfg = Config.azure_openai()
+        llm = AzureChatOpenAI(
+            api_key=azure_cfg["api_key"],
+            azure_endpoint=azure_cfg["endpoint"],
+            api_version=azure_cfg["api_version"],
+            deployment_name=azure_cfg["deployment_name"],
+            temperature=0.1,
+            max_tokens=200,
+            timeout=20
+        )
+    else:
+        llm = ChatOpenAI(
+            api_key=Config.openai()["api_key"],
+            model="gpt-4o-mini",
+            temperature=0.1,
+            max_tokens=200,
+            timeout=20
+        )
+
+    parser = PydanticOutputParser(pydantic_object=IntentSchema)
+
+    system_prompt = """
+You are an intent classifier for hotel and hospital services plus general intents.
+Return a valid JSON matching the given schema with fields intent, confidence, entities, context.
+Allowed intents include: room_booking, check_in, check_out, room_service, laundry_service, wake_up_call,
+wifi_info, amenities_info, dining_hours, concierge_service, housekeeping, appointment_booking,
+appointment_reminder, directions, department_info, triage_assistant, patient_history, emergency_info,
+visiting_hours, insurance_info, greeting, goodbye, help, unknown, fallback.
+"""
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", "Text: {text}\nOptional context: {context}\n{format_instructions}")
+    ]).partial(format_instructions=parser.get_format_instructions())
+
+    return prompt | llm | parser
+
+
 class OrchestratorAgent:
     """
-    Orchestrator Agent: Determines intent using GPT-4 and routes to appropriate agents with optimizations
+    Orchestrator Agent: Determines intent using LLM and routes to appropriate agents with optimizations
     """
 
     def __init__(self):
-        self.client = openai.OpenAI(api_key=Config.openai()["api_key"])
+        # Keep OpenAI client for backward compatibility/other calls if needed
+        self.client = openai.OpenAI(api_key=Config.openai()["api_key"])  # may be unused after migration
         self.logger = structlog.get_logger(__name__)
         self.openai_circuit_breaker = CircuitBreaker(
             failure_threshold=5,
@@ -40,47 +96,9 @@ class OrchestratorAgent:
         }
         self.system_prompt = """
         You are an AI assistant that determines user intent for hotel and hospital services.
-        
-        Available intents:
-        Hotel Services:
-        - room_booking: Booking rooms, checking availability
-        - check_in: Hotel check-in process
-        - check_out: Hotel check-out process
-        - room_service: Food and beverage orders
-        - laundry_service: Laundry and dry cleaning
-        - wake_up_call: Setting wake-up calls
-        - wifi_info: WiFi password and connection info
-        - amenities_info: Hotel facilities and services
-        - dining_hours: Restaurant and dining information
-        - concierge_service: Concierge assistance
-        - housekeeping: Room cleaning and maintenance
-        
-        Hospital Services:
-        - appointment_booking: Scheduling medical appointments
-        - appointment_reminder: Appointment reminders and confirmations
-        - directions: Hospital navigation and directions
-        - department_info: Information about hospital departments
-        - triage_assistant: Basic health assessment and triage
-        - patient_history: Patient medical history access
-        - emergency_info: Emergency services information
-        - visiting_hours: Hospital visiting hours
-        - insurance_info: Insurance and billing information
-        
-        General:
-        - greeting: Hello, hi, good morning, etc.
-        - goodbye: Goodbye, bye, see you, etc.
-        - help: Help requests, what can you do
-        - unknown: Unclear or unrecognized intent
-        - fallback: Default response when unsure
-        
-        Respond with a JSON object containing:
-        {
-            "intent": "the_determined_intent",
-            "confidence": 0.95,
-            "entities": {"key": "value"},
-            "context": "additional_context"
-        }
         """
+        # Build chain once
+        self._intent_chain = build_intent_chain()
 
     @property
     def all_intents(self) -> List[str]:
@@ -91,42 +109,30 @@ class OrchestratorAgent:
     @retry_on_exception(max_attempts=3, delay=2)
     async def determine_intent(self, text: str, context: Dict = None) -> Dict[str, Any]:
         """
-        Determine user intent using GPT-4
+        Determine user intent using LangChain chain with structured output
         """
         try:
             self.logger.info("Determining intent", text_preview=text[:100])
 
-            def sync_call():
-                user_message = f"User input: {text}"
-                if context:
-                    user_message += f"\nContext: {json.dumps(context)}"
-                response = self.client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[
-                        {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": user_message}
-                    ],
-                    temperature=0.1,
-                    max_tokens=200
-                )
-                return response
+            def sync_invoke():
+                return self._intent_chain.invoke({
+                    "text": text,
+                    "context": json.dumps(context or {})
+                })
 
-            response = await self.openai_circuit_breaker.call(lambda: asyncio.to_thread(sync_call))
-            response = await response  # openai_circuit_breaker.call returns coroutine
-            response_text = response.choices[0].message.content
-            intent_result = json.loads(response_text)
+            # Execute in thread to avoid blocking
+            result: IntentSchema = await asyncio.to_thread(sync_invoke)
+
+            intent_result = {
+                "intent": result.intent,
+                "confidence": float(result.confidence),
+                "entities": result.entities,
+                "context": result.context,
+            }
 
             self.logger.info("Intent determined", intent=intent_result.get("intent"), confidence=intent_result.get("confidence"))
             return intent_result
 
-        except json.JSONDecodeError as e:
-            self.logger.error("Failed to parse intent response", error=str(e))
-            return {
-                "intent": "unknown",
-                "confidence": 0.0,
-                "entities": {},
-                "context": "Failed to parse intent"
-            }
         except Exception as e:
             self.logger.error("Error determining intent", error=str(e))
             return {

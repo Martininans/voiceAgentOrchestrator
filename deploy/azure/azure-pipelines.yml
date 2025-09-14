@@ -1,0 +1,305 @@
+# Azure DevOps Pipeline for Voice Agent Orchestrator
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+  paths:
+    include:
+    - backend-python-orchestrator/*
+    - backend-node-realtime/*
+
+variables:
+  # Azure Container Registry
+  acrName: 'voiceagentregistry'
+  acrLoginServer: '$(acrName).azurecr.io'
+  
+  # Azure Resource Group
+  resourceGroupName: 'voice-agent-rg'
+  location: 'eastus'
+  
+  # Container Images
+  orchestratorImageName: 'voice-agent-orchestrator'
+  realtimeImageName: 'voice-agent-realtime'
+  
+  # Kubernetes
+  kubernetesServiceConnection: 'voice-agent-aks-connection'
+  kubernetesNamespace: 'voice-agent'
+
+stages:
+- stage: Build
+  displayName: 'Build and Push Images'
+  jobs:
+  - job: BuildOrchestrator
+    displayName: 'Build Python Orchestrator'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: Docker@2
+      displayName: 'Build Orchestrator Image'
+      inputs:
+        command: 'build'
+        dockerfile: 'backend-python-orchestrator/Dockerfile'
+        tags: |
+          $(acrLoginServer)/$(orchestratorImageName):$(Build.BuildId)
+          $(acrLoginServer)/$(orchestratorImageName):latest
+        arguments: '--build-arg BUILD_DATE=$(date -u +''%Y-%m-%dT%H:%M:%SZ'') --build-arg VCS_REF=$(Build.SourceVersion)'
+    
+    - task: Docker@2
+      displayName: 'Push Orchestrator Image'
+      inputs:
+        command: 'push'
+        tags: '$(acrLoginServer)/$(orchestratorImageName):$(Build.BuildId)'
+    
+    - task: Docker@2
+      displayName: 'Push Latest Orchestrator Image'
+      inputs:
+        command: 'push'
+        tags: '$(acrLoginServer)/$(orchestratorImageName):latest'
+
+  - job: BuildRealtime
+    displayName: 'Build Node.js Realtime'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: Docker@2
+      displayName: 'Build Realtime Image'
+      inputs:
+        command: 'build'
+        dockerfile: 'backend-node-realtime/Dockerfile'
+        tags: |
+          $(acrLoginServer)/$(realtimeImageName):$(Build.BuildId)
+          $(acrLoginServer)/$(realtimeImageName):latest
+        arguments: '--build-arg BUILD_DATE=$(date -u +''%Y-%m-%dT%H:%M:%SZ'') --build-arg VCS_REF=$(Build.SourceVersion)'
+    
+    - task: Docker@2
+      displayName: 'Push Realtime Image'
+      inputs:
+        command: 'push'
+        tags: '$(acrLoginServer)/$(realtimeImageName):$(Build.BuildId)'
+    
+    - task: Docker@2
+      displayName: 'Push Latest Realtime Image'
+      inputs:
+        command: 'push'
+        tags: '$(acrLoginServer)/$(realtimeImageName):latest'
+
+- stage: Test
+  displayName: 'Run Tests'
+  dependsOn: Build
+  jobs:
+  - job: TestOrchestrator
+    displayName: 'Test Python Orchestrator'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.11'
+        addToPath: true
+    
+    - script: |
+        cd backend-python-orchestrator
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+      displayName: 'Install Dependencies'
+    
+    - script: |
+        cd backend-python-orchestrator
+        python -m pytest tests/ -v --cov=app --cov-report=xml
+      displayName: 'Run Tests with Coverage'
+    
+    - task: PublishCodeCoverageResults@1
+      inputs:
+        codeCoverageTool: 'Cobertura'
+        summaryFileLocation: 'backend-python-orchestrator/coverage.xml'
+        reportDirectory: 'backend-python-orchestrator/coverage'
+
+  - job: TestRealtime
+    displayName: 'Test Node.js Realtime'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '18.x'
+    
+    - script: |
+        cd backend-node-realtime
+        npm ci
+        npm run test
+      displayName: 'Run Tests'
+
+- stage: Security
+  displayName: 'Security Scan'
+  dependsOn: Build
+  jobs:
+  - job: SecurityScan
+    displayName: 'Container Security Scan'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: Docker@2
+      displayName: 'Scan Orchestrator Image'
+      inputs:
+        command: 'run'
+        containerRegistry: '$(acrName)'
+        repository: '$(orchestratorImageName)'
+        command: 'run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image $(acrLoginServer)/$(orchestratorImageName):$(Build.BuildId)'
+    
+    - task: Docker@2
+      displayName: 'Scan Realtime Image'
+      inputs:
+        command: 'run'
+        containerRegistry: '$(acrName)'
+        repository: '$(realtimeImageName)'
+        command: 'run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image $(acrLoginServer)/$(realtimeImageName):$(Build.BuildId)'
+
+- stage: DeployStaging
+  displayName: 'Deploy to Staging'
+  dependsOn: [Build, Test, Security]
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'))
+  jobs:
+  - deployment: DeployStaging
+    displayName: 'Deploy to Staging Environment'
+    environment: 'staging'
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureCLI@2
+            displayName: 'Deploy to Staging ACI'
+            inputs:
+              azureSubscription: 'Azure Service Connection'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                # Deploy orchestrator to staging
+                az container create \
+                  --resource-group $(resourceGroupName) \
+                  --name voice-agent-orchestrator-staging \
+                  --image $(acrLoginServer)/$(orchestratorImageName):$(Build.BuildId) \
+                  --registry-login-server $(acrLoginServer) \
+                  --registry-username $(acrName) \
+                  --registry-password $(ACR_PASSWORD) \
+                  --dns-name-label voice-agent-orchestrator-staging \
+                  --ports 8000 \
+                  --cpu 1 \
+                  --memory 2 \
+                  --environment-variables \
+                    NODE_ENV=staging \
+                    LOG_LEVEL=debug \
+                    SECTOR=generic
+              
+          - task: AzureCLI@2
+            displayName: 'Deploy Realtime to Staging ACI'
+            inputs:
+              azureSubscription: 'Azure Service Connection'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                # Deploy realtime to staging
+                az container create \
+                  --resource-group $(resourceGroupName) \
+                  --name voice-agent-realtime-staging \
+                  --image $(acrLoginServer)/$(realtimeImageName):$(Build.BuildId) \
+                  --registry-login-server $(acrLoginServer) \
+                  --registry-username $(acrName) \
+                  --registry-password $(ACR_PASSWORD) \
+                  --dns-name-label voice-agent-realtime-staging \
+                  --ports 3000 \
+                  --cpu 1 \
+                  --memory 1 \
+                  --environment-variables \
+                    NODE_ENV=staging \
+                    PORT=3000 \
+                    HOST=0.0.0.0 \
+                    VOICE_PROVIDER=twilio \
+                    ORCHESTRATOR_URL="http://voice-agent-orchestrator-staging.eastus.azurecontainer.io:8000"
+
+- stage: DeployProduction
+  displayName: 'Deploy to Production'
+  dependsOn: [Build, Test, Security]
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployProduction
+    displayName: 'Deploy to Production AKS'
+    environment: 'production'
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: Kubernetes@1
+            displayName: 'Deploy to AKS'
+            inputs:
+              connectionType: 'Kubernetes Service Connection'
+              kubernetesServiceEndpoint: '$(kubernetesServiceConnection)'
+              namespace: '$(kubernetesNamespace)'
+              command: 'apply'
+              useConfigurationFile: true
+              configuration: 'deploy/azure/k8s-production.yaml'
+              secretType: 'dockerRegistry'
+              secretArguments: |
+                --docker-server=$(acrLoginServer)
+                --docker-username=$(acrName)
+                --docker-password=$(ACR_PASSWORD)
+                --docker-email=$(ACR_EMAIL)
+          
+          - task: AzureCLI@2
+            displayName: 'Update AKS Deployment'
+            inputs:
+              azureSubscription: 'Azure Service Connection'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                # Update image tags in Kubernetes
+                kubectl set image deployment/voice-agent-orchestrator \
+                  orchestrator=$(acrLoginServer)/$(orchestratorImageName):$(Build.BuildId) \
+                  --namespace=$(kubernetesNamespace)
+                
+                kubectl set image deployment/voice-agent-realtime \
+                  realtime=$(acrLoginServer)/$(realtimeImageName):$(Build.BuildId) \
+                  --namespace=$(kubernetesNamespace)
+                
+                # Wait for rollout to complete
+                kubectl rollout status deployment/voice-agent-orchestrator --namespace=$(kubernetesNamespace)
+                kubectl rollout status deployment/voice-agent-realtime --namespace=$(kubernetesNamespace)
+
+- stage: PostDeploy
+  displayName: 'Post-Deployment Tasks'
+  dependsOn: [DeployStaging, DeployProduction]
+  jobs:
+  - job: HealthCheck
+    displayName: 'Health Check'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: AzureCLI@2
+      displayName: 'Run Health Checks'
+      inputs:
+        azureSubscription: 'Azure Service Connection'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          # Health check for staging
+          if [ "$(Build.SourceBranch)" = "refs/heads/develop" ]; then
+            echo "Checking staging environment..."
+            curl -f http://voice-agent-orchestrator-staging.eastus.azurecontainer.io:8000/health
+            curl -f http://voice-agent-realtime-staging.eastus.azurecontainer.io:3000/health
+          fi
+          
+          # Health check for production
+          if [ "$(Build.SourceBranch)" = "refs/heads/main" ]; then
+            echo "Checking production environment..."
+            # Get AKS load balancer IP
+            ORCHESTRATOR_IP=$(kubectl get service voice-agent-orchestrator-service --namespace=$(kubernetesNamespace) -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            REALTIME_IP=$(kubectl get service voice-agent-realtime-service --namespace=$(kubernetesNamespace) -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            
+            curl -f http://$ORCHESTRATOR_IP/health
+            curl -f http://$REALTIME_IP/health
+          fi

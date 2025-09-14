@@ -4,9 +4,71 @@ console.log('✅ Loading VoiceAgent Routes');
 
 module.exports = async function (fastify, opts) {
     console.log('🔧 Registering VoiceAgent routes with prefix:', opts.prefix || '/voice');
+    const requireAuth = (request, reply, done) => {
+        const auth = request.headers['authorization'];
+        if (!auth) return reply.code(401).send({ error: 'Unauthorized' });
+        const token = auth.startsWith('Bearer ') ? auth.slice(7) : auth;
+        try {
+            request.user = fastify.jwt.verify(token);
+            done();
+        } catch (e) {
+            reply.code(401).send({ error: 'Invalid token' });
+        }
+    };
     
+    // Schemas
+    const schemas = {
+        inbound: {
+            body: {
+                type: 'object',
+                properties: {
+                    from: { type: 'string' },
+                    to: { type: 'string' },
+                    metadata: { type: 'object', additionalProperties: true }
+                },
+                required: ['from', 'to'],
+                additionalProperties: false
+            }
+        },
+        outbound: {
+            body: {
+                type: 'object',
+                properties: {
+                    to: { type: 'string' },
+                    message: { type: 'string' },
+                    options: { type: 'object', additionalProperties: true }
+                },
+                required: ['to'],
+                additionalProperties: false
+            }
+        },
+        tts: {
+            body: {
+                type: 'object',
+                properties: {
+                    text: { type: 'string', minLength: 1, maxLength: 1000 },
+                    voice: { type: 'string' },
+                    language: { type: 'string' }
+                },
+                required: ['text'],
+                additionalProperties: false
+            }
+        },
+        sms: {
+            body: {
+                type: 'object',
+                properties: {
+                    to: { type: 'string' },
+                    text: { type: 'string', minLength: 1, maxLength: 1000 }
+                },
+                required: ['to', 'text'],
+                additionalProperties: false
+            }
+        }
+    };
+
     // Inbound call handling
-    fastify.post('/inbound-call', async (request, reply) => {
+    fastify.post('/inbound-call', { preHandler: requireAuth, schema: schemas.inbound }, async (request, reply) => {
         console.log('📞 Received inbound call request');
         try {
             const result = await VoiceAgent.handleInboundCall(request.body);
@@ -18,7 +80,7 @@ module.exports = async function (fastify, opts) {
     });
 
     // Outbound call handling
-    fastify.post('/outbound-call', async (request, reply) => {
+    fastify.post('/outbound-call', { preHandler: requireAuth, schema: schemas.outbound }, async (request, reply) => {
         console.log('📞 Received outbound call request');
         try {
             const result = await VoiceAgent.handleOutboundCall(request.body);
@@ -30,7 +92,7 @@ module.exports = async function (fastify, opts) {
     });
 
     // Text-to-Speech
-    fastify.post('/tts', async (request, reply) => {
+    fastify.post('/tts', { preHandler: requireAuth, schema: schemas.tts }, async (request, reply) => {
         console.log('🔊 Received TTS request');
         try {
             const result = await VoiceAgent.textToSpeech(request.body);
@@ -42,7 +104,7 @@ module.exports = async function (fastify, opts) {
     });
 
     // SMS sending
-    fastify.post('/sms', async (request, reply) => {
+    fastify.post('/sms', { preHandler: requireAuth, schema: schemas.sms }, async (request, reply) => {
         console.log('📱 Received SMS request');
         try {
             const result = await VoiceAgent.sendSMS(request.body);
@@ -67,7 +129,7 @@ module.exports = async function (fastify, opts) {
         }
     });
 
-    // Twilio webhook for call status updates
+    // Twilio webhook for call status updates (signature verification to be implemented per provider docs)
     fastify.post('/webhook', async (request, reply) => {
         console.log('🔗 Received Twilio webhook');
         try {
@@ -94,7 +156,7 @@ module.exports = async function (fastify, opts) {
     });
 
     // Voice agent status
-    fastify.get('/status', async (request, reply) => {
+    fastify.get('/status', { preHandler: requireAuth }, async (request, reply) => {
         console.log('📊 Received status request');
         try {
             const status = await VoiceAgent.getStatus();
@@ -116,7 +178,7 @@ module.exports = async function (fastify, opts) {
     });
 
     // Configuration endpoint
-    fastify.get('/config', async (request, reply) => {
+    fastify.get('/config', { preHandler: requireAuth }, async (request, reply) => {
         return {
             provider: config.voice.provider,
             orchestrator: {
@@ -130,7 +192,7 @@ module.exports = async function (fastify, opts) {
     });
 
     // Provider management routes
-    fastify.get('/providers', async (request, reply) => {
+    fastify.get('/providers', { preHandler: requireAuth }, async (request, reply) => {
         console.log('📋 Received providers list request');
         try {
             const providers = VoiceAgent.getAvailableProviders();
@@ -148,7 +210,7 @@ module.exports = async function (fastify, opts) {
         }
     });
 
-    fastify.post('/providers/switch', async (request, reply) => {
+    fastify.post('/providers/switch', { preHandler: requireAuth }, async (request, reply) => {
         console.log('🔄 Received provider switch request');
         try {
             const { provider } = request.body;
@@ -170,7 +232,7 @@ module.exports = async function (fastify, opts) {
         }
     });
 
-    fastify.get('/providers/:provider/capabilities', async (request, reply) => {
+    fastify.get('/providers/:provider/capabilities', { preHandler: requireAuth }, async (request, reply) => {
         console.log('📋 Received provider capabilities request');
         try {
             const { provider } = request.params;

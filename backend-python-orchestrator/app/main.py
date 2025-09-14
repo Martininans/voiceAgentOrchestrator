@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, List, Optional
@@ -7,6 +7,10 @@ import json
 import os
 from dotenv import load_dotenv
 import logging
+import time
+import uuid
+import redis
+from prometheus_client import Counter, Histogram, CollectorRegistry, CONTENT_TYPE_LATEST, generate_latest
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -23,6 +27,12 @@ from app.optimization_implementations import initialize_optimizations, cache_man
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(dotenv_path)
 
+# LangGraph wiring
+from app.graphs.conversation_graph import build_graph
+from app.tools.router import route_to_tool as simple_route
+from app.auth import azure_auth, AuthResponse, User, get_current_user, get_optional_user, require_admin, require_roles
+from fastapi import Request
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -31,24 +41,80 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware
+# CORS middleware - Production ready configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost",
         "http://localhost:3000",
-        "http://127.0.0.1",
-        "http://127.0.0.1:3000"
+        "http://127.0.0.1:3000",
+        "https://your-frontend-domain.com",  # Replace with actual frontend domain
+        "https://your-app-domain.com"        # Replace with actual app domain
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-Requested-With",
+        "Accept",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers"
+    ],
 )
 
 # Optimization: Initialize on startup
 @app.on_event("startup")
 async def startup_event():
-    await initialize_optimizations()
+    # Allow disabling optimizations (e.g., when Redis is not running)
+    disable_opt = os.getenv("DISABLE_OPTIMIZATIONS", "false").lower()
+    if disable_opt == "true":
+        logger.warning("Starting without optimizations (DISABLE_OPTIMIZATIONS=true)")
+        return
+    
+    try:
+        await initialize_optimizations()
+    except Exception as e:
+        logger.warning(f"Failed to initialize optimizations: {e}")
+        logger.warning("Continuing without optimizations...")
+
+# --- Observability: Correlation IDs & Metrics ---
+registry = CollectorRegistry()
+http_requests_total = Counter(
+    "http_requests_total",
+    "Total HTTP requests",
+    labelnames=("method", "path", "status"),
+    registry=registry,
+)
+http_request_duration = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request duration in seconds",
+    labelnames=("method", "path"),
+    registry=registry,
+)
+
+@app.middleware("http")
+async def metrics_and_correlation_middleware(request: Request, call_next):
+    start_time = time.time()
+    # Correlation ID
+    req_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+    # Process request
+    response: Response
+    try:
+        response = await call_next(request)
+    finally:
+        duration = time.time() - start_time
+        path_template = request.scope.get("path") or request.url.path
+        http_request_duration.labels(request.method, path_template).observe(duration)
+    # Count after response determined
+    http_requests_total.labels(request.method, path_template, str(response.status_code)).inc()
+    # Propagate header
+    response.headers["x-request-id"] = req_id
+    return response
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)
 
 # Load sector configuration
 def load_sector_config() -> Dict:
@@ -82,6 +148,24 @@ orchestrator_agent = OrchestratorAgent()
 memory_agent = MemoryAgent()
 tool_agents = ToolAgents(sector_config)
 voice_agent = create_voice_agent()
+
+# Build minimal graph using LangChain-based classifier and simple router
+
+def classify_node(state: Dict) -> Dict:
+    # No-op: intent is precomputed in the endpoint and included in state
+    return state
+
+
+def act_node(state: Dict) -> Dict:
+    tool_response = simple_route(
+        intent=state.get("intent", "fallback"),
+        text=state["text"],
+        context=state.get("context", {})
+    )
+    state.update({"response": tool_response})
+    return state
+
+conversation_graph = build_graph(classify_node, act_node)
 
 # WebSocket manager
 class ConnectionManager:
@@ -136,6 +220,24 @@ def health_check():
         "sector": sector_config["sector"]
     }
 
+@app.get("/ready")
+def readiness_check():
+    # Optionally verify Redis connectivity if configured
+    redis_url = os.getenv("REDIS_URL")
+    redis_ok = None
+    if redis_url:
+        try:
+            r = redis.from_url(redis_url, socket_connect_timeout=1, socket_timeout=1)
+            r.ping()
+            redis_ok = True
+        except Exception:
+            redis_ok = False
+    return {
+        "ready": True if (redis_ok is not False) else False,
+        "redis": redis_ok,
+        "sector": sector_config["sector"],
+    }
+
 @app.post("/process-audio")
 async def process_audio(request: AudioRequest):
     transcribed_text = await input_agent.transcribe_audio(request.audio_data)
@@ -152,27 +254,123 @@ async def process_audio(request: AudioRequest):
 
 @app.post("/process-intent")
 async def process_intent(request: TextRequest):
+    # Compute intent first (async), then run graph for action only
     intent_result = await orchestrator_agent.determine_intent(
         text=request.text,
-        context={}
+        context={
+            "user_id": request.user_id,
+            "session_id": request.session_id,
+            "sector": request.sector
+        }
     )
-    tool_response = await tool_agents.route_to_tool(
-        intent=intent_result["intent"],
-        text=request.text,
-        context={}
-    )
+
+    initial_state = {
+        "text": request.text,
+        "context": {
+            "user_id": request.user_id,
+            "session_id": request.session_id,
+            "sector": request.sector
+        },
+        "intent": intent_result.get("intent"),
+        "confidence": intent_result.get("confidence", 0.0)
+    }
+    result_state = conversation_graph.invoke(initial_state)
+
     await memory_agent.store_interaction(
         user_id=request.user_id,
         session_id=request.session_id,
         input_type="text",
         content=request.text,
-        intent=intent_result["intent"],
-        response=tool_response
+        intent=result_state.get("intent"),
+        response=result_state.get("response")
     )
     return {
         "success": True,
-        "intent": intent_result["intent"],
-        "response": tool_response
+        "intent": result_state.get("intent"),
+        "response": result_state.get("response"),
+        "confidence": result_state.get("confidence", 0.0)
+    }
+
+# =============================================================================
+# AZURE AD B2C AUTHENTICATION ENDPOINTS
+# =============================================================================
+
+@app.get("/auth/google", response_model=Dict[str, str])
+async def get_google_auth_url(request: Request):
+    """Get Google SSO authorization URL through Azure AD B2C"""
+    try:
+        return await azure_auth.get_google_auth_url(request)
+    except Exception as e:
+        logger.error(f"Google auth URL error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate Google auth URL")
+
+@app.get("/auth/azure", response_model=Dict[str, str])
+async def get_azure_auth_url(request: Request):
+    """Get Azure AD B2C authorization URL"""
+    try:
+        return await azure_auth.get_regular_auth_url(request)
+    except Exception as e:
+        logger.error(f"Azure auth URL error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate Azure auth URL")
+
+@app.post("/auth/callback", response_model=AuthResponse)
+async def oauth_callback(
+    code: str,
+    state: str,
+    request: Request
+):
+    """Handle OAuth callback from Azure AD B2C (Google or regular)"""
+    try:
+        return await azure_auth.exchange_code_for_token(code, state, request)
+    except Exception as e:
+        logger.error(f"OAuth callback error: {e}")
+        raise HTTPException(status_code=400, detail="OAuth authentication failed")
+
+@app.post("/auth/refresh", response_model=AuthResponse)
+async def refresh_token(refresh_token: str):
+    """Refresh access token"""
+    try:
+        return await azure_auth.refresh_access_token(refresh_token)
+    except Exception as e:
+        logger.error(f"Token refresh error: {e}")
+        raise HTTPException(status_code=401, detail="Token refresh failed")
+
+@app.post("/auth/logout")
+async def logout(
+    user_id: str,
+    refresh_token: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Logout user and invalidate tokens"""
+    try:
+        return await azure_auth.logout(user_id, refresh_token)
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        raise HTTPException(status_code=500, detail="Logout failed")
+
+@app.get("/auth/me", response_model=User)
+async def get_current_user_info(current_user: User = Depends(get_current_user)):
+    """Get current user information"""
+    return current_user
+
+@app.get("/auth/providers")
+async def get_auth_providers():
+    """Get available authentication providers"""
+    return {
+        "providers": [
+            {
+                "name": "google",
+                "display_name": "Google",
+                "auth_url_endpoint": "/auth/google",
+                "icon": "https://developers.google.com/identity/images/g-logo.png"
+            },
+            {
+                "name": "azure_ad",
+                "display_name": "Microsoft Account",
+                "auth_url_endpoint": "/auth/azure",
+                "icon": "https://img.icons8.com/color/48/000000/microsoft.png"
+            }
+        ]
     }
 
 # --- VONAGE WEBHOOK ENDPOINTS ---
@@ -358,20 +556,24 @@ async def admin_websocket_endpoint(websocket: WebSocket):
 # --- TEXT PROCESSOR (WS) ---
 
 async def process_text_websocket(message: Dict, websocket: WebSocket, user: WSUser):
+    # Compute intent first (async), then run graph for action only
     intent_result = await orchestrator_agent.determine_intent(
         text=message["text"],
-        context=message.get("context", {})
+        context={**message.get("context", {}), "user_id": user.email}
     )
-    tool_response = await tool_agents.route_to_tool(
-        intent=intent_result["intent"],
-        text=message["text"],
-        context=message.get("context", {})
-    )
+    state = {
+        "text": message["text"],
+        "context": {**message.get("context", {}), "user_id": user.email},
+        "intent": intent_result.get("intent"),
+        "confidence": intent_result.get("confidence", 0.0)
+    }
+    result = conversation_graph.invoke(state)
     await websocket.send_text(json.dumps({
         "type": "text_response",
-        "intent": intent_result["intent"],
-        "response": tool_response,
-        "user": user.email
+        "intent": result.get("intent"),
+        "response": result.get("response"),
+        "user": user.email,
+        "confidence": result.get("confidence", 0.0)
     }))
 
 # --- MAIN ENTRYPOINT ---

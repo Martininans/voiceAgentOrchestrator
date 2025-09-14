@@ -8,6 +8,27 @@ const config = {
         environment: process.env.NODE_ENV || 'development'
     },
 
+    // Data/Storage backend selection
+    dataBackend: process.env.DATA_BACKEND || 'supabase', // supabase | azure_postgres
+    storageBackend: process.env.STORAGE_BACKEND || 'supabase', // supabase | azure_blob
+
+    // Azure settings
+    azure: {
+        postgres: {
+            connectionString: process.env.AZURE_PG_CONNECTION_STRING || ''
+        },
+        blob: {
+            connectionString: process.env.AZURE_STORAGE_CONNECTION_STRING || '',
+            container: process.env.AZURE_BLOB_CONTAINER || 'voice-agent'
+        },
+        aadB2c: {
+            tenant: process.env.AAD_B2C_TENANT || '',
+            clientId: process.env.AAD_B2C_CLIENT_ID || '',
+            issuer: process.env.AAD_B2C_ISSUER || '',
+            policy: process.env.AAD_B2C_POLICY || ''
+        }
+    },
+
     // Voice Provider Configuration
     voice: {
         provider: process.env.VOICE_PROVIDER || 'twilio',
@@ -46,6 +67,17 @@ const config = {
             apiKey: process.env.GENERIC_HTTP_API_KEY,
             headers: process.env.GENERIC_HTTP_HEADERS ? JSON.parse(process.env.GENERIC_HTTP_HEADERS) : {},
             timeout: parseInt(process.env.GENERIC_HTTP_TIMEOUT) || 30000
+        },
+
+        // Sarvam AI Configuration
+        sarvam: {
+            apiKey: process.env.SARVAM_API_KEY,
+            apiSecret: process.env.SARVAM_API_SECRET,
+            baseUrl: process.env.SARVAM_BASE_URL || 'https://api.sarvam.ai',
+            model: process.env.SARVAM_MODEL || 'sarvam-tts-hindi',
+            language: process.env.SARVAM_LANGUAGE || 'hi',
+            voice: process.env.SARVAM_VOICE || 'female',
+            webhookUrl: process.env.SARVAM_WEBHOOK_URL || 'http://localhost:3000/voice/webhook'
         },
 
         // Africa's Talking Configuration
@@ -127,16 +159,10 @@ function validateConfig() {
         }
     }
 
-    // Check Supabase configuration
-    const missingSupabase = requiredEnvVars.supabase.filter(varName => !process.env[varName]);
-    if (missingSupabase.length > 0) {
-        console.warn(`⚠️  Missing Supabase environment variables: ${missingSupabase.join(', ')}`);
-        console.warn(`📋 Using placeholder values for Supabase. Please update your .env file.`);
-    }
-
-    // Log current provider
+    // Log current provider and backends
     console.log(`🎯 Voice Provider: ${provider}`);
-    console.log(`🔧 Available providers: ${Object.keys(requiredEnvVars).filter(key => key !== 'supabase').join(', ')}`);
+    console.log(`🗄️  Data Backend: ${config.dataBackend}`);
+    console.log(`🗂️  Storage Backend: ${config.storageBackend}`);
 }
 
 // Run validation

@@ -1,0 +1,309 @@
+version: '3.8'
+
+services:
+  # Production Node.js Realtime Backend
+  realtime:
+    build:
+      context: ./backend-node-realtime
+      dockerfile: Dockerfile.prod
+    container_name: voice-agent-realtime-prod
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - LOG_LEVEL=info
+      - CORS_ORIGIN=${CORS_ORIGIN}
+      - CORS_CREDENTIALS=true
+      - JWT_SECRET=${JWT_SECRET}
+      - VOICE_PROVIDER=${VOICE_PROVIDER}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+      - VONAGE_API_KEY=${VONAGE_API_KEY}
+      - VONAGE_API_SECRET=${VONAGE_API_SECRET}
+      - VONAGE_APPLICATION_ID=${VONAGE_APPLICATION_ID}
+      - VONAGE_PRIVATE_KEY=${VONAGE_PRIVATE_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - AWS_CONNECT_INSTANCE_ID=${AWS_CONNECT_INSTANCE_ID}
+      - SARVAM_API_KEY=${SARVAM_API_KEY}
+      - SARVAM_API_SECRET=${SARVAM_API_SECRET}
+      - SARVAM_BASE_URL=${SARVAM_BASE_URL}
+      - SARVAM_MODEL=${SARVAM_MODEL}
+      - SARVAM_LANGUAGE=${SARVAM_LANGUAGE}
+      - SARVAM_VOICE=${SARVAM_VOICE}
+      - DATA_BACKEND=${DATA_BACKEND}
+      - AZURE_PG_CONNECTION_STRING=${AZURE_PG_CONNECTION_STRING}
+      - STORAGE_BACKEND=${STORAGE_BACKEND}
+      - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING}
+      - AUTH_PROVIDER=${AUTH_PROVIDER}
+      - AAD_B2C_TENANT_ID=${AAD_B2C_TENANT_ID}
+      - AAD_B2C_CLIENT_ID=${AAD_B2C_CLIENT_ID}
+      - AAD_B2C_POLICY=${AAD_B2C_POLICY}
+      - REDIS_URL=${REDIS_URL}
+      - ORCHESTRATOR_URL=http://orchestrator:8000
+      - AAD_B2C_CLIENT_SECRET=${AAD_B2C_CLIENT_SECRET}
+      - AAD_B2C_GOOGLE_POLICY=${AAD_B2C_GOOGLE_POLICY}
+      - AAD_B2C_PASSWORD_RESET_POLICY=${AAD_B2C_PASSWORD_RESET_POLICY}
+      - AAD_B2C_REDIRECT_URI=${AAD_B2C_REDIRECT_URI}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
+      - REFRESH_EXPIRES_IN=${REFRESH_EXPIRES_IN}
+    volumes:
+      - realtime_logs:/app/logs
+    networks:
+      - voice-agent-network
+    depends_on:
+      - orchestrator
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Production Python Orchestrator Backend
+  orchestrator:
+    build:
+      context: ./backend-python-orchestrator
+      dockerfile: Dockerfile.prod
+    container_name: voice-agent-orchestrator-prod
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      - VOICE_PROVIDER=${VOICE_PROVIDER}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - VONAGE_API_KEY=${VONAGE_API_KEY}
+      - VONAGE_API_SECRET=${VONAGE_API_SECRET}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - SARVAM_API_KEY=${SARVAM_API_KEY}
+      - SARVAM_API_SECRET=${SARVAM_API_SECRET}
+      - SARVAM_BASE_URL=${SARVAM_BASE_URL}
+      - SARVAM_MODEL=${SARVAM_MODEL}
+      - SARVAM_LANGUAGE=${SARVAM_LANGUAGE}
+      - SARVAM_VOICE=${SARVAM_VOICE}
+      - REDIS_URL=${REDIS_URL}
+      - CHROMA_PERSIST_DIRECTORY=/app/chroma_db
+      - DISABLE_OPTIMIZATIONS=false
+      - VECTOR_BACKEND=${VECTOR_BACKEND}
+      - AZURE_SEARCH_ENDPOINT=${AZURE_SEARCH_ENDPOINT}
+      - AZURE_SEARCH_KEY=${AZURE_SEARCH_KEY}
+      - AZURE_SEARCH_INDEX_NAME=${AZURE_SEARCH_INDEX_NAME}
+      - AAD_B2C_CLIENT_SECRET=${AAD_B2C_CLIENT_SECRET}
+      - AAD_B2C_GOOGLE_POLICY=${AAD_B2C_GOOGLE_POLICY}
+      - AAD_B2C_PASSWORD_RESET_POLICY=${AAD_B2C_PASSWORD_RESET_POLICY}
+      - AAD_B2C_REDIRECT_URI=${AAD_B2C_REDIRECT_URI}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
+      - REFRESH_EXPIRES_IN=${REFRESH_EXPIRES_IN}
+    volumes:
+      - orchestrator_logs:/app/logs
+      - chroma_data:/app/chroma_db
+    networks:
+      - voice-agent-network
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: voice-agent-redis-prod
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - voice-agent-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: voice-agent-nginx-prod
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+      - nginx_logs:/var/log/nginx
+    networks:
+      - voice-agent-network
+    depends_on:
+      - realtime
+      - orchestrator
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: voice-agent-prometheus-prod
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - voice-agent-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: voice-agent-grafana-prod
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - voice-agent-network
+    depends_on:
+      - prometheus
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+volumes:
+  realtime_logs:
+    driver: local
+  orchestrator_logs:
+    driver: local
+  redis_data:
+    driver: local
+  chroma_data:
+    driver: local
+  nginx_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  voice-agent-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+
+
+
+
+
+
+
+
+

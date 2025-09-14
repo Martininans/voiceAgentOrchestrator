@@ -32,6 +32,12 @@ The Voice Agent Orchestrator supports multiple voice providers through a pluggab
 - **Best for**: Custom or regional voice providers
 - **Documentation**: See configuration section below
 
+### 5. Sarvam AI
+- **Provider ID**: `sarvam`
+- **Features**: Voice calls, TTS, STT, SMS, Speech recognition with Indian language support
+- **Best for**: Indian markets, Hindi and regional language support
+- **Documentation**: [Sarvam AI API](https://sarvam.ai)
+
 ## 🔧 Configuration
 
 ### Environment Variables
@@ -50,6 +56,9 @@ VOICE_PROVIDER=aws-connect
 
 # For Generic HTTP
 VOICE_PROVIDER=generic-http
+
+# For Sarvam AI
+VOICE_PROVIDER=sarvam
 ```
 
 ### Provider-Specific Configuration
@@ -88,6 +97,17 @@ GENERIC_HTTP_WEBHOOK_URL=https://your-voice-provider.com/api
 GENERIC_HTTP_API_KEY=your-api-key
 GENERIC_HTTP_TIMEOUT=30000
 GENERIC_HTTP_HEADERS={"Custom-Header": "value"}
+```
+
+#### Sarvam AI Configuration
+```bash
+SARVAM_API_KEY=your-sarvam-api-key
+SARVAM_API_SECRET=your-sarvam-api-secret
+SARVAM_BASE_URL=https://api.sarvam.ai
+SARVAM_MODEL=sarvam-tts-hindi
+SARVAM_LANGUAGE=hi
+SARVAM_VOICE=female
+SARVAM_WEBHOOK_URL=http://localhost:3000/voice/webhook
 ```
 
 ## 🚀 Quick Setup

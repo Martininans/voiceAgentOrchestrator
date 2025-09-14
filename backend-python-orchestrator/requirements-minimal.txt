@@ -1,0 +1,13 @@
+fastapi==0.115.9
+uvicorn==0.34.3
+pydantic==2.11.7
+python-dotenv==1.1.0
+prometheus-client==0.17.1
+redis==5.0.1
+PyJWT==2.8.0
+requests==2.32.4
+httpx==0.27.0
+structlog==23.1.0
+psutil==5.9.5
+slowapi==0.1.9
+tenacity==9.1.2

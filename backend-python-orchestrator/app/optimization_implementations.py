@@ -7,6 +7,7 @@ import asyncio
 import json
 import time
 import logging
+import os
 from typing import Dict, List, Any, Optional, Callable
 from functools import wraps
 from contextlib import asynccontextmanager
@@ -40,19 +41,20 @@ class DatabaseManager:
         self.chroma_client = None
         self._initialized = False
     
-   async def initialize(self):
-    """Initialize all database connections with proper pooling"""
-    try:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        
-        self.redis_pool = aioredis.ConnectionPool.from_url(
-            redis_url,
-            max_connections=20,
-            retry_on_timeout=True,
-            socket_keepalive=True,
-            socket_keepalive_options={},
-            health_check_interval=30
-        )
+    async def initialize(self, redis_url: Optional[str] = None):
+        """Initialize all database connections with proper pooling"""
+        try:
+            redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379")
+            
+            # Redis connection pool
+            self.redis_pool = aioredis.ConnectionPool.from_url(
+                redis_url,
+                max_connections=20,
+                retry_on_timeout=True,
+                socket_keepalive=True,
+                socket_keepalive_options={},
+                health_check_interval=30
+            )
             
             # ChromaDB client with optimized settings
             import chromadb

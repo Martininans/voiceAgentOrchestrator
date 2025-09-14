@@ -1,8 +1,8 @@
-import openai
 import base64
 import io
 import structlog
 import asyncio
+import requests
 from typing import Dict, Any
 from app.config import Config
 from app.optimization_implementations import (
@@ -13,11 +13,12 @@ from app.optimization_implementations import (
 
 class InputAgent:
     """
-    Input Agent: Transcribes audio to text using OpenAI Whisper
+    Input Agent: Transcribes audio to text using Sarvam AI
     """
     
     def __init__(self):
-        self.client = openai.OpenAI(api_key=Config.openai()["api_key"])
+        self.api_key = Config.sarvam()["api_key"]
+        self.base_url = "https://api.sarvam.ai"
         self.logger = structlog.get_logger(__name__)
         
     @track_metrics("transcribe_audio")
@@ -25,7 +26,7 @@ class InputAgent:
     @circuit_breaker
     async def transcribe_audio(self, audio_data: str) -> str:
         """
-        Transcribe audio data to text using OpenAI Whisper
+        Transcribe audio data to text using Sarvam AI Speech-to-Text
         
         Args:
             audio_data: Base64 encoded audio data or audio file path
@@ -34,7 +35,7 @@ class InputAgent:
             Transcribed text
         """
         try:
-            self.logger.info("Starting audio transcription")
+            self.logger.info("Starting audio transcription with Sarvam AI")
             
             # Handle base64 encoded audio data
             if audio_data.startswith('data:audio'):
@@ -44,16 +45,26 @@ class InputAgent:
             # Decode base64 audio data
             audio_bytes = base64.b64decode(audio_data)
             
-            # Create a file-like object for OpenAI API
-            audio_file = io.BytesIO(audio_bytes)
-            audio_file.name = "audio.wav"  # Give it a filename
-            
             def sync_call():
-                return self.client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    response_format="text"
+                # Prepare the request for Sarvam AI Speech-to-Text API
+                url = f"{self.base_url}/v1/speech/transcribe"
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "audio/wav"
+                }
+                
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    data=audio_bytes,
+                    timeout=30
                 )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    return result.get("text", "")
+                else:
+                    raise Exception(f"Sarvam AI API error: {response.status_code} - {response.text}")
 
             transcript = await asyncio.to_thread(sync_call)
             
@@ -69,7 +80,7 @@ class InputAgent:
     @circuit_breaker
     async def transcribe_file(self, file_path: str) -> str:
         """
-        Transcribe audio file to text
+        Transcribe audio file to text using Sarvam AI
         
         Args:
             file_path: Path to audio file
@@ -78,15 +89,29 @@ class InputAgent:
             Transcribed text
         """
         try:
-            self.logger.info("Transcribing file", file_path=file_path)
+            self.logger.info("Transcribing file with Sarvam AI", file_path=file_path)
             
             def sync_call():
                 with open(file_path, "rb") as audio_file:
-                    return self.client.audio.transcriptions.create(
-                        model="whisper-1",
-                        file=audio_file,
-                        response_format="text"
+                    # Prepare the request for Sarvam AI Speech-to-Text API
+                    url = f"{self.base_url}/v1/speech/transcribe"
+                    headers = {
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "audio/wav"
+                    }
+                    
+                    response = requests.post(
+                        url,
+                        headers=headers,
+                        data=audio_file.read(),
+                        timeout=30
                     )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        return result.get("text", "")
+                    else:
+                        raise Exception(f"Sarvam AI API error: {response.status_code} - {response.text}")
 
             transcript = await asyncio.to_thread(sync_call)
             

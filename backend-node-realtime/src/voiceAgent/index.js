@@ -4,6 +4,7 @@ const AWSConnectDriver = require('./drivers/awsConnect');
 const GenericHttpDriver = require('./drivers/genericHttp');
 const AfricasTalkingDriver = require('./drivers/africastalking');
 const ExotelDriver = require('./drivers/exotelDriver');
+const SarvamDriver = require('./drivers/sarvamDriver');
 const config = require('../config');
 
 // Map of available drivers
@@ -13,7 +14,8 @@ const driverMap = {
     'aws-connect': AWSConnectDriver,
     'generic-http': GenericHttpDriver,
     africastalking: AfricasTalkingDriver,
-    exotel: ExotelDriver
+    exotel: ExotelDriver,
+    sarvam: SarvamDriver
 };
 
 // Get the configured provider

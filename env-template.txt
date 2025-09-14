@@ -5,7 +5,7 @@
 # ============================================================================
 # VOICE PROVIDER CONFIGURATION
 # ============================================================================
-# Choose your voice provider: twilio, vonage, aws-connect, generic-http
+# Choose your voice provider: twilio, vonage, aws-connect, generic-http, sarvam
 VOICE_PROVIDER=twilio
 
 # ============================================================================
@@ -43,6 +43,17 @@ GENERIC_HTTP_WEBHOOK_URL=https://your-voice-service.com/webhook
 GENERIC_HTTP_API_KEY=your_generic_api_key
 GENERIC_HTTP_HEADERS={"Authorization": "Bearer your_token"}
 GENERIC_HTTP_TIMEOUT=30000
+
+# ============================================================================
+# SARVAM AI CONFIGURATION (if using sarvam)
+# ============================================================================
+SARVAM_API_KEY=your_sarvam_api_key
+SARVAM_API_SECRET=your_sarvam_api_secret
+SARVAM_BASE_URL=https://api.sarvam.ai
+SARVAM_MODEL=sarvam-tts-hindi
+SARVAM_LANGUAGE=hi
+SARVAM_VOICE=female
+SARVAM_WEBHOOK_URL=http://localhost:3000/voice/webhook
 
 # ============================================================================
 # SUPABASE CONFIGURATION

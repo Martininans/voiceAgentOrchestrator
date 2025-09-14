@@ -57,6 +57,23 @@ class Config:
         }
 
     @staticmethod
+    def azure_openai() -> dict:
+        return {
+            "api_key": Config.get_env("AZURE_OPENAI_API_KEY", "mock-azure-openai-key"),
+            "endpoint": Config.get_env("AZURE_OPENAI_ENDPOINT", "https://mock-aoai.openai.azure.com"),
+            "api_version": Config.get_env("AZURE_OPENAI_API_VERSION", "2024-02-15-preview"),
+            "deployment_name": Config.get_env("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
+        }
+
+    @staticmethod
+    def llm_provider() -> str:
+        return Config.get_env("LLM_PROVIDER", "openai").lower()
+
+    @staticmethod
+    def vector_backend() -> str:
+        return Config.get_env("VECTOR_BACKEND", "chroma").lower()
+
+    @staticmethod
     def twilio() -> dict:
         return {
             "account_sid": Config.get_env("TWILIO_ACCOUNT_SID", "mock-twilio-account-sid"),
@@ -94,6 +111,18 @@ class Config:
         }
 
     @staticmethod
+    def sarvam() -> dict:
+        return {
+            "api_key": Config.get_env("SARVAM_API_KEY", "mock-sarvam-api-key"),
+            "api_secret": Config.get_env("SARVAM_API_SECRET", "mock-sarvam-api-secret"),
+            "base_url": Config.get_env("SARVAM_BASE_URL", "https://api.sarvam.ai"),
+            "model": Config.get_env("SARVAM_MODEL", "sarvam-tts-hindi"),
+            "language": Config.get_env("SARVAM_LANGUAGE", "hi"),
+            "voice": Config.get_env("SARVAM_VOICE", "female"),
+            "webhook_url": Config.get_env("SARVAM_WEBHOOK_URL", "http://localhost:8000/voice/webhook")
+        }
+
+    @staticmethod
     def voice_provider() -> str:
         """Get the current voice provider from environment"""
         return Config.get_env("VOICE_PROVIDER", "twilio").lower()
@@ -111,6 +140,8 @@ class Config:
             return Config.aws_connect()
         elif provider == "generic-http":
             return Config.generic_http()
+        elif provider == "sarvam":
+            return Config.sarvam()
         else:
             logger.warning(f"Unknown voice provider: {provider}, falling back to twilio")
             return Config.twilio()
